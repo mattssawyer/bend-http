@@ -26,6 +26,7 @@ A spec for v1 of two BendHub packages, `urlpath` and `http1` (server side), comp
 <!-- one line per resolved ticket: [title](issues/NN-slug.md): gist -->
 
 - [How do BendHub packages depend on each other, and what does publishing need?](issues/04-bendhub-packages.md): hub imports by name@version or hash; laws and proofs must ship together; publish doesn't enforce --verdict; names under 12 chars are auctioned.
+- [Which request-smuggling and parsing attacks must http1 reject?](issues/03-http1-smuggling-cases.md): 43 cases with RFC sections and rejection reasons; rejection ends the connection; 8 edge cases left to decide.
 
 ## Not yet specified
 
