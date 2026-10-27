@@ -2,6 +2,7 @@
 
 Type: grilling
 Status: open
+Assignee: Matthew Sawyer
 Blocked by: 01
 Map: [bend-http v1 spec](../map.md)
 
