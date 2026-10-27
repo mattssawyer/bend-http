@@ -1,7 +1,7 @@
 # Which request-smuggling and parsing attacks must http1 reject?
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 Map: [bend-http v1 spec](../map.md)
 

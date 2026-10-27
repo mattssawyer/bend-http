@@ -1,7 +1,7 @@
 # What do Bend's TCP receive functions return, and what text and byte operations does Base offer?
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 Map: [bend-http v1 spec](../map.md)
 

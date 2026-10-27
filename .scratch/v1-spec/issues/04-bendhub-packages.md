@@ -1,7 +1,7 @@
 # How do BendHub packages depend on each other, and what does publishing need?
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 Map: [bend-http v1 spec](../map.md)
 

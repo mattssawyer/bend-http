@@ -1,7 +1,7 @@
 # Which standard rules and known attacks must urlpath handle?
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 Map: [bend-http v1 spec](../map.md)
 
