@@ -19,7 +19,8 @@ A spec for v1 of two BendHub packages, `urlpath` and `http1` (server side), comp
   - `http1` rejects anything ambiguous or obsolete rather than guessing (strict RFC 9112).
   - `http1` v1 is server side: parse requests, write responses.
   - Parsing is a pure function over the input received so far, returning a parse outcome: Need more, Rejected (reason) or Parsed (request + leftover input).
-  - Names `urlpath` and `http1`; MIT licence.
+  - MIT licence. (Names reopened: short names are auctioned; see the package-names ticket.)
+- Prior art (found 2026-10-27): `bend-kit-http` already ships HTTP/1.1 and HTTP/2 on BendHub, with mostly example-based laws. http1 must earn its place with general laws; see the positioning ticket. The user chose to continue with HTTP for its learning and portfolio value.
 
 ## Decisions so far
 

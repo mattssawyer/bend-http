@@ -2,7 +2,7 @@
 
 Type: grilling
 Status: open
-Blocked by: 03, 07, 08
+Blocked by: 03, 07, 08, 10
 Map: [bend-http v1 spec](../map.md)
 
 ## Question
