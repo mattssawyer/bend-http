@@ -25,6 +25,8 @@ A spec for v1 of two BendHub packages, `urlpath` and `http1` (server side), comp
 
 <!-- one line per resolved ticket: [title](issues/NN-slug.md): gist -->
 
+- [How do BendHub packages depend on each other, and what does publishing need?](issues/04-bendhub-packages.md): hub imports by name@version or hash; laws and proofs must ship together; publish doesn't enforce --verdict; names under 12 chars are auctioned.
+
 ## Not yet specified
 
 - **Response writing:** the response type `http1` writes, and its laws (no header injection, correct framing of the body). Depends on the request type.
