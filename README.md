@@ -9,7 +9,7 @@ This repo will hold two BendHub packages:
 
 Neither package opens a socket. Your code reads bytes from the connection, hands them to the parser and sends back the bytes it returns. A small demo server will show how the pieces fit.
 
-> **Status:** early. I'm writing this by hand to learn HTTP, so it moves one step at a time. The byte classes in `urlpath` are done. Nothing is published yet, and the API below may change.
+> **Status:** early. 
 
 ## Why write another parser
 
