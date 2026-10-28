@@ -9,8 +9,6 @@ This repo will hold two BendHub packages:
 
 Neither package opens a socket. Your code reads bytes from the connection, hands them to the parser and sends back the bytes it returns. A small demo server will show how the pieces fit.
 
-> **Status:** early. 
-
 ## Why write another parser
 
 BendHub already has HTTP code. This project is about laws that hold for every possible input and are checked by Bend's proof checker, rather than tests on a handful of examples. The ones I care most about:
