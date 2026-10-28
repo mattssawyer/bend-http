@@ -1,6 +1,6 @@
 # bend-http
 
-An HTTP/1.1 request parser for [Bend 2](https://github.com/HigherOrderCO/Bend2), with proofs.
+An HTTP/1.1 request parser for [Bend 2](https://github.com/bendlang/bend), with proofs.
 
 This repo will hold two BendHub packages:
 
