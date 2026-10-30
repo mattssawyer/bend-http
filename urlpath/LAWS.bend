@@ -145,3 +145,50 @@ law decode_plain:
     for b: List<&2, U32>
     for e: {Path.all_pchar(b) == True{} : Bool}
     {Path.decode(b) == Done{b} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+
+# Dot-segment removal (segments here are already split and decoded)
+
+# "/a/./b" becomes "/a/b"
+law dots_single:
+    {Path.remove_dots([[97], [46], [98]]) == Done{[[97], [98]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/a/../b" becomes "/b"
+law dots_parent:
+    {Path.remove_dots([[97], [46, 46], [98]]) == Done{[[98]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/a/b/.." becomes "/a/"
+law dots_end_parent:
+    {Path.remove_dots([[97], [98], [46, 46]]) == Done{[[97], []]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/a/b/." becomes "/a/b/"
+law dots_end_single:
+    {Path.remove_dots([[97], [98], [46]]) == Done{[[97], [98], []]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/." becomes "/"
+law dots_root_single:
+    {Path.remove_dots([[46]]) == Done{[[]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/a/.." becomes "/"
+law dots_to_root:
+    {Path.remove_dots([[97], [46, 46]]) == Done{[[]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/a/b" is unchanged
+law dots_none:
+    {Path.remove_dots([[97], [98]]) == Done{[[97], [98]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# ".a", "..." and "..a" are ordinary names
+law dots_lookalikes:
+    {Path.remove_dots([[46, 97], [46, 46, 46], [46, 46, 97]]) == Done{[[46, 97], [46, 46, 46], [46, 46, 97]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/.." climbs above the root
+law dots_above_root:
+    {Path.remove_dots([[46, 46]]) == Fail{Path.AboveRoot{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/a/../.." climbs above the root
+law dots_above_root_late:
+    {Path.remove_dots([[97], [46, 46], [46, 46]]) == Fail{Path.AboveRoot{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# "/../a" climbs above the root
+law dots_above_root_mid:
+    {Path.remove_dots([[46, 46], [97]]) == Fail{Path.AboveRoot{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}

@@ -267,3 +267,39 @@ def Laws.decode_plain(b, e):
       {==}
     case Con{+h, +t}:
       decode_plain.at(Path.is_pchar(h), h, t, e, e2 => Laws.decode_plain(t, e2))
+
+
+# ---- Dot-segment removal ----
+
+def Laws.dots_single():
+  {==}
+
+def Laws.dots_parent():
+  {==}
+
+def Laws.dots_end_parent():
+  {==}
+
+def Laws.dots_end_single():
+  {==}
+
+def Laws.dots_root_single():
+  {==}
+
+def Laws.dots_to_root():
+  {==}
+
+def Laws.dots_none():
+  {==}
+
+def Laws.dots_lookalikes():
+  {==}
+
+def Laws.dots_above_root():
+  {==}
+
+def Laws.dots_above_root_late():
+  {==}
+
+def Laws.dots_above_root_mid():
+  {==}

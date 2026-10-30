@@ -211,3 +211,100 @@ def all_pchar(b: List<&2, U32>) -> Bool:
         True{}
     case Con{+h, t}:
         is_pchar(h) && all_pchar(t)
+
+
+# ---- Dot-segment removal (step 4) ----
+
+# What a decoded segment is: ".", "..", or anything else
+type SegKind is Data:
+  Other{}
+  Dot{}
+  DotDot{}
+
+# Second byte was ".": it's ".." only if nothing follows
+def seg_kind.two(dot: Bool, t: List<&2, U32>) -> SegKind:
+  match dot:
+    case True{}:
+        match t:
+          case Nil{}:
+              DotDot{}
+          case Con{c, r}:
+              Other{}
+    case False{}:
+        Other{}
+
+# First byte was ".": it's "." if nothing follows, maybe ".." if another "." follows
+def seg_kind.one(dot: Bool, t: List<&2, U32>) -> SegKind:
+  match dot:
+    case True{}:
+        match t:
+          case Nil{}:
+              Dot{}
+          case Con{+c, r}:
+              seg_kind.two(U32.is_eq(c, 46), r)
+    case False{}:
+        Other{}
+
+def seg_kind(s: List<&2, U32>) -> SegKind:
+  match s:
+    case Nil{}:
+        Other{}
+    case Con{+c, t}:
+        seg_kind.one(U32.is_eq(c, 46), t)
+
+# Handle one segment, given the segments kept so far (newest first).
+# last is True when this is the final segment: then "." or ".." leaves an
+# empty final segment, so "/a/b/.." becomes "/a/".
+def remove_dots.step(kind: SegKind, s: List<&2, U32>, last: Bool, kept: List<&2, List<&2, U32>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match kind:
+    case Other{}:
+        Done{Con{s, kept}}
+    case Dot{}:
+        match last:
+          case True{}:
+              Done{Con{Nil{}, kept}}
+          case False{}:
+              Done{kept}
+    case DotDot{}:
+        match last:
+          case True{}:
+              match kept:
+                case Nil{}:
+                    Fail{AboveRoot{}}
+                case Con{x, k2}:
+                    Done{Con{Nil{}, k2}}
+          case False{}:
+              match kept:
+                case Nil{}:
+                    Fail{AboveRoot{}}
+                case Con{x, k2}:
+                    Done{k2}
+
+# Same, but passes a failure straight through
+def remove_dots.acc(+s: List<&2, U32>, last: Bool, acc: Result<&2, &2, PathError, List<&2, List<&2, U32>>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match acc:
+    case Fail{e}:
+        Fail{e}
+    case Done{kept}:
+        remove_dots.step(seg_kind(s), s, last, kept)
+
+# Once every segment is handled, put the kept ones back in order
+def remove_dots.end(acc: Result<&2, &2, PathError, List<&2, List<&2, U32>>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match acc:
+    case Fail{e}:
+        Fail{e}
+    case Done{kept}:
+        Done{List.reverse(&2, List<&2, U32>, kept)}
+
+def remove_dots.go(segs: List<&2, List<&2, U32>>, acc: Result<&2, &2, PathError, List<&2, List<&2, U32>>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match segs:
+    case Nil{}:
+        remove_dots.end(acc)
+    case Con{+s, +rest}:
+        remove_dots.go(rest, remove_dots.acc(s, List.is_empty(&2, List<&2, U32>, rest), acc))
+
+# Remove "." and ".." segments (RFC 3986 section 5.2.4).
+# "." is dropped, ".." drops the segment before it. A ".." with nothing
+# before it would climb above the root, so it's rejected with AboveRoot.
+def remove_dots(segs: List<&2, List<&2, U32>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  remove_dots.go(segs, Done{Nil{}})
