@@ -252,59 +252,320 @@ def seg_kind(s: List<&2, U32>) -> SegKind:
     case Con{+c, t}:
         seg_kind.one(U32.is_eq(c, 46), t)
 
-# Handle one segment, given the segments kept so far (newest first).
-# last is True when this is the final segment: then "." or ".." leaves an
-# empty final segment, so "/a/b/.." becomes "/a/".
-def remove_dots.step(kind: SegKind, s: List<&2, U32>, last: Bool, kept: List<&2, List<&2, U32>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+# Is this kind an ordinary segment?
+def is_other(k: SegKind) -> Bool:
+  match k:
+    case Other{}:
+        True{}
+    case Dot{}:
+        False{}
+    case DotDot{}:
+        False{}
+
+# Dot removal works right to left. up counts the ".." segments still waiting
+# to remove an ordinary segment to their left; kept is the result so far.
+type Dots is Data:
+  Dots{up: Nat, kept: List<&2, List<&2, U32>>}
+
+# An ordinary segment: kept, unless a ".." to its right removes it
+def rd.keep(s: List<&2, U32>, d: Dots) -> Dots:
+  match d:
+    case Dots{up, kept}:
+        match up:
+          case 0n:
+              Dots{0n, Con{s, kept}}
+          case 1n+n:
+              Dots{n, kept}
+
+# A "..": one more segment to remove
+def rd.up(d: Dots) -> Dots:
+  match d:
+    case Dots{up, kept}:
+        Dots{1n+up, kept}
+
+# Handle segment s, given d = the result for the segments to its right.
+# last is True for the final segment: a final "." or ".." leaves an empty
+# final segment, so "/a/b/.." becomes "/a/".
+def rd.step(kind: SegKind, s: List<&2, U32>, last: Bool, d: Dots) -> Dots:
   match kind:
     case Other{}:
-        Done{Con{s, kept}}
+        match last:
+          case True{}:
+              Dots{0n, [s]}
+          case False{}:
+              rd.keep(s, d)
     case Dot{}:
         match last:
           case True{}:
-              Done{Con{Nil{}, kept}}
+              Dots{0n, [[]]}
           case False{}:
-              Done{kept}
+              d
     case DotDot{}:
         match last:
           case True{}:
-              match kept:
-                case Nil{}:
-                    Fail{AboveRoot{}}
-                case Con{x, k2}:
-                    Done{Con{Nil{}, k2}}
+              Dots{1n, [[]]}
           case False{}:
-              match kept:
-                case Nil{}:
-                    Fail{AboveRoot{}}
-                case Con{x, k2}:
-                    Done{k2}
+              rd.up(d)
 
-# Same, but passes a failure straight through
-def remove_dots.acc(+s: List<&2, U32>, last: Bool, acc: Result<&2, &2, PathError, List<&2, List<&2, U32>>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
-  match acc:
-    case Fail{e}:
-        Fail{e}
-    case Done{kept}:
-        remove_dots.step(seg_kind(s), s, last, kept)
-
-# Once every segment is handled, put the kept ones back in order
-def remove_dots.end(acc: Result<&2, &2, PathError, List<&2, List<&2, U32>>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
-  match acc:
-    case Fail{e}:
-        Fail{e}
-    case Done{kept}:
-        Done{List.reverse(&2, List<&2, U32>, kept)}
-
-def remove_dots.go(segs: List<&2, List<&2, U32>>, acc: Result<&2, &2, PathError, List<&2, List<&2, U32>>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+def rd(segs: List<&2, List<&2, U32>>) -> Dots:
   match segs:
     case Nil{}:
-        remove_dots.end(acc)
+        Dots{0n, Nil{}}
     case Con{+s, +rest}:
-        remove_dots.go(rest, remove_dots.acc(s, List.is_empty(&2, List<&2, U32>, rest), acc))
+        rd.step(seg_kind(s), s, List.is_empty(&2, List<&2, U32>, rest), rd(rest))
+
+# A ".." still waiting at the far left would climb above the root
+def rd.end(d: Dots) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match d:
+    case Dots{up, kept}:
+        match up:
+          case 0n:
+              Done{kept}
+          case 1n+n:
+              Fail{AboveRoot{}}
 
 # Remove "." and ".." segments (RFC 3986 section 5.2.4).
 # "." is dropped, ".." drops the segment before it. A ".." with nothing
 # before it would climb above the root, so it's rejected with AboveRoot.
 def remove_dots(segs: List<&2, List<&2, U32>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
-  remove_dots.go(segs, Done{Nil{}})
+  rd.end(rd(segs))
+
+
+# ---- parse (step 5) ----
+
+# Every element is a byte (0-255)
+def all_bytes(b: List<&2, U32>) -> Bool:
+  match b:
+    case Nil{}:
+        True{}
+    case Con{+h, t}:
+        (h <= 255 : U32) && all_bytes(t)
+
+# Does the list contain byte x?
+def has_byte(b: List<&2, U32>, +x: U32) -> Bool:
+  match b:
+    case Nil{}:
+        False{}
+    case Con{+h, t}:
+        U32.is_eq(h, x) || has_byte(t, x)
+
+# A byte that must never appear in a decoded segment: "/", "\", controls
+def unsafe_byte(+c: U32) -> Bool:
+  U32.is_eq(c, 47) || U32.is_eq(c, 92) || (c < 32 : U32) || U32.is_eq(c, 127)
+
+# No unsafe byte in this segment
+def safe_seg(s: List<&2, U32>) -> Bool:
+  match s:
+    case Nil{}:
+        True{}
+    case Con{+h, t}:
+        Bool.not(unsafe_byte(h)) && safe_seg(t)
+
+# Is the segment "." or ".."?
+def is_dot_seg(s: List<&2, U32>) -> Bool:
+  Bool.not(is_other(seg_kind(s)))
+
+# Third byte after "..": is it ";"?
+def dot_semi.two(semi: Bool, dot: Bool, t: List<&2, U32>) -> Bool:
+  match semi:
+    case True{}:
+        True{}
+    case False{}:
+        match dot:
+          case True{}:
+              match t:
+                case Nil{}:
+                    False{}
+                case Con{+c, r}:
+                    U32.is_eq(c, 59)
+          case False{}:
+              False{}
+
+def dot_semi.one(dot: Bool, t: List<&2, U32>) -> Bool:
+  match dot:
+    case True{}:
+        match t:
+          case Nil{}:
+              False{}
+          case Con{+c, r}:
+              dot_semi.two(U32.is_eq(c, 59), U32.is_eq(c, 46), r)
+    case False{}:
+        False{}
+
+# Does the segment start with ".;" or "..;"?
+def dot_semi(s: List<&2, U32>) -> Bool:
+  match s:
+    case Nil{}:
+        False{}
+    case Con{+c, t}:
+        dot_semi.one(U32.is_eq(c, 46), t)
+
+# The checks that don't depend on position: no unsafe byte, not an
+# encoded "." or "..", no ".;" or "..;" start
+def seg_ok.dots(+raw: List<&2, U32>, +d: List<&2, U32>) -> Bool:
+  Bool.not(is_dot_seg(d) && has_byte(raw, 37)) && Bool.not(dot_semi(d))
+
+def seg_ok.shape(+raw: List<&2, U32>, +d: List<&2, U32>) -> Bool:
+  safe_seg(d) && seg_ok.dots(raw, d)
+
+# Only the final segment may be empty
+def seg_ok.place(d: List<&2, U32>, last: Bool) -> Bool:
+  last || Bool.not(List.is_empty(&2, U32, d))
+
+# Is a decoded segment acceptable? raw is its undecoded form, last is True
+# for the final segment.
+def seg_ok(+raw: List<&2, U32>, +d: List<&2, U32>, last: Bool) -> Bool:
+  seg_ok.shape(raw, d) && seg_ok.place(d, last)
+
+def seg_error.empty(enc_dot: Bool, semi: Bool) -> PathError:
+  match enc_dot:
+    case True{}:
+        EncodedDotSegment{}
+    case False{}:
+        match semi:
+          case True{}:
+              DotSemicolonSegment{}
+          case False{}:
+              EmptySegment{}
+
+def seg_error.control(control: Bool, enc_dot: Bool, semi: Bool) -> PathError:
+  match control:
+    case True{}:
+        ControlByte{}
+    case False{}:
+        seg_error.empty(enc_dot, semi)
+
+def seg_error.back(back: Bool, control: Bool, enc_dot: Bool, semi: Bool) -> PathError:
+  match back:
+    case True{}:
+        EncodedBackslash{}
+    case False{}:
+        seg_error.control(control, enc_dot, semi)
+
+def seg_error.slash(slash: Bool, back: Bool, control: Bool, enc_dot: Bool, semi: Bool) -> PathError:
+  match slash:
+    case True{}:
+        EncodedSlash{}
+    case False{}:
+        seg_error.back(back, control, enc_dot, semi)
+
+# Why seg_ok said no, checked in the spec's order
+def seg_error(+raw: List<&2, U32>, +d: List<&2, U32>) -> PathError:
+  seg_error.slash(has_byte(d, 47), has_byte(d, 92), Bool.not(safe_seg(d)),
+    is_dot_seg(d) && has_byte(raw, 37), dot_semi(d))
+
+def check_decoded.if(ok: Bool, +raw: List<&2, U32>, +d: List<&2, U32>) -> Result<&2, &2, PathError, List<&2, U32>>:
+  match ok:
+    case True{}:
+        Done{d}
+    case False{}:
+        Fail{seg_error(raw, d)}
+
+def check_seg.d(r: Result<&2, &2, PathError, List<&2, U32>>, +raw: List<&2, U32>, last: Bool) -> Result<&2, &2, PathError, List<&2, U32>>:
+  match r:
+    case Fail{e}:
+        Fail{e}
+    case Done{+d}:
+        check_decoded.if(seg_ok(raw, d, last), raw, d)
+
+# Decode one raw segment and check it
+def check_seg(+raw: List<&2, U32>, last: Bool) -> Result<&2, &2, PathError, List<&2, U32>>:
+  check_seg.d(decode(raw), raw, last)
+
+def check_all.cons(a: Result<&2, &2, PathError, List<&2, U32>>, b: Result<&2, &2, PathError, List<&2, List<&2, U32>>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match a:
+    case Fail{e}:
+        Fail{e}
+    case Done{s}:
+        match b:
+          case Fail{e}:
+              Fail{e}
+          case Done{ss}:
+              Done{Con{s, ss}}
+
+# Decode and check every raw segment, left to right; the first error wins
+def check_all(raws: List<&2, List<&2, U32>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match raws:
+    case Nil{}:
+        Done{Nil{}}
+    case Con{+r, +rest}:
+        check_all.cons(check_seg(r, List.is_empty(&2, List<&2, U32>, rest)), check_all(rest))
+
+def parse.dots(r: Result<&2, &2, PathError, List<&2, List<&2, U32>>>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match r:
+    case Fail{e}:
+        Fail{e}
+    case Done{ds}:
+        remove_dots(ds)
+
+def parse.slash(slash: Bool, t: List<&2, U32>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match slash:
+    case True{}:
+        parse.dots(check_all(split(t)))
+    case False{}:
+        Fail{NotAbsolute{}}
+
+def parse.first(raw: List<&2, U32>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match raw:
+    case Nil{}:
+        Fail{NotAbsolute{}}
+    case Con{+c, t}:
+        parse.slash(U32.is_eq(c, 47), t)
+
+def parse.bytes(ok: Bool, raw: List<&2, U32>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  match ok:
+    case True{}:
+        parse.first(raw)
+    case False{}:
+        Fail{NotAByte{}}
+
+# Turn the raw path of a request ("/a/b%20c") into its decoded segments,
+# or say why it's rejected. See the spec, section 3.3.
+def parse(+raw: List<&2, U32>) -> Result<&2, &2, PathError, List<&2, List<&2, U32>>>:
+  parse.bytes(all_bytes(raw), raw)
+
+
+# ---- What the laws promise about parse ----
+
+# Starts with "/"
+def starts_with_slash(b: List<&2, U32>) -> Bool:
+  match b:
+    case Nil{}:
+        False{}
+    case Con{+c, t}:
+        U32.is_eq(c, 47)
+
+# No segment is "." or ".."
+def no_dot_segs(p: List<&2, List<&2, U32>>) -> Bool:
+  match p:
+    case Nil{}:
+        True{}
+    case Con{+s, t}:
+        Bool.not(is_dot_seg(s)) && no_dot_segs(t)
+
+# No segment contains "/", "\" or a control byte
+def all_safe(p: List<&2, List<&2, U32>>) -> Bool:
+  match p:
+    case Nil{}:
+        True{}
+    case Con{s, t}:
+        safe_seg(s) && all_safe(t)
+
+def eol.step(last: Bool, s: List<&2, U32>, r: Bool) -> Bool:
+  match last:
+    case True{}:
+        True{}
+    case False{}:
+        Bool.not(List.is_empty(&2, U32, s)) && r
+
+# Every segment except the last is non-empty
+def only_last_empty(p: List<&2, List<&2, U32>>) -> Bool:
+  match p:
+    case Nil{}:
+        True{}
+    case Con{s, +rest}:
+        eol.step(List.is_empty(&2, List<&2, U32>, rest), s, only_last_empty(rest))
+
+# At least one segment, and only the last may be empty
+def empty_only_last(+p: List<&2, List<&2, U32>>) -> Bool:
+  Bool.not(List.is_empty(&2, List<&2, U32>, p)) && only_last_empty(p)

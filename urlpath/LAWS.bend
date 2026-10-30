@@ -192,3 +192,147 @@ law dots_above_root_late:
 # "/../a" climbs above the root
 law dots_above_root_mid:
     {Path.remove_dots([[46, 46], [97]]) == Fail{Path.AboveRoot{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+
+# parse examples (the cases from the urlpath research, ticket 02)
+
+# Case 1: "/" is one empty segment
+law parse_root:
+    {Path.parse(Path.bytes("/")) == Done{[[]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 1: a path must start with "/"
+law parse_not_absolute:
+    {Path.parse(Path.bytes("a/b")) == Fail{Path.NotAbsolute{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 1: an empty path is not absolute
+law parse_empty:
+    {Path.parse(Path.bytes("")) == Fail{Path.NotAbsolute{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 2: a raw space is not allowed
+law parse_space:
+    {Path.parse(Path.bytes("/a b")) == Fail{Path.InvalidByte{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 3: "#" never reaches the path
+law parse_fragment:
+    {Path.parse(Path.bytes("/a#b")) == Fail{Path.InvalidByte{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 4: "%" needs two hex digits
+law parse_bad_percent:
+    {Path.parse(Path.bytes("/a%2")) == Fail{Path.BadPercent{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Cases 5 and 6: either hex case, "%41" is "A"
+law parse_hex_case:
+    {Path.parse(Path.bytes("/%2e%41")) == Done{[[46, 65]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 7: literal dot segments are removed
+law parse_dots:
+    {Path.parse(Path.bytes("/a/./b/../c")) == Done{[[97], [99]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 7: ".." above the root is rejected
+law parse_above_root:
+    {Path.parse(Path.bytes("/../a")) == Fail{Path.AboveRoot{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 8: "%2e%2e" is rejected, not treated as ".."
+law parse_encoded_dotdot:
+    {Path.parse(Path.bytes("/%2e%2e/a")) == Fail{Path.EncodedDotSegment{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 8: mixed ".%2E" too
+law parse_mixed_dotdot:
+    {Path.parse(Path.bytes("/a/.%2E")) == Fail{Path.EncodedDotSegment{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 9: "%2F" is rejected
+law parse_encoded_slash:
+    {Path.parse(Path.bytes("/a%2Fb")) == Fail{Path.EncodedSlash{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 10: a raw backslash is not allowed
+law parse_raw_backslash:
+    {Path.parse(Path.bytes("/a\\b")) == Fail{Path.InvalidByte{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 10: "%5C" is rejected
+law parse_encoded_backslash:
+    {Path.parse(Path.bytes("/a%5cb")) == Fail{Path.EncodedBackslash{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 11: "%00" is rejected
+law parse_nul:
+    {Path.parse(Path.bytes("/a%00")) == Fail{Path.ControlByte{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 11: "%7F" is rejected
+law parse_del:
+    {Path.parse(Path.bytes("/a%7F")) == Fail{Path.ControlByte{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 12: "%252e" decodes once, to the text "%2e"
+law parse_double_encoding:
+    {Path.parse(Path.bytes("/%252e")) == Done{[[37, 50, 101]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 13: overlong UTF-8 stays two opaque bytes, never "."
+law parse_overlong:
+    {Path.parse(Path.bytes("/%c0%ae")) == Done{[[192, 174]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 14: "//" is rejected
+law parse_double_slash:
+    {Path.parse(Path.bytes("//a")) == Fail{Path.EmptySegment{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 14: an empty segment in the middle is rejected
+law parse_inner_empty:
+    {Path.parse(Path.bytes("/a//b")) == Fail{Path.EmptySegment{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 15: "..;" is rejected (Tomcat bug)
+law parse_dotdot_semi:
+    {Path.parse(Path.bytes("/a/..;/b")) == Fail{Path.DotSemicolonSegment{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 15: other ";" parameters are kept as text
+law parse_semi_param:
+    {Path.parse(Path.bytes("/a;x=1/b")) == Done{[[97, 59, 120, 61, 49], [98]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 17: a trailing slash is a final empty segment
+law parse_trailing:
+    {Path.parse(Path.bytes("/a/")) == Done{[[97], []]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 17: a final ".." keeps the trailing slash
+law parse_trailing_dotdot:
+    {Path.parse(Path.bytes("/a/b/..")) == Done{[[97], []]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 18: "%3F" is a plain "?" inside a segment
+law parse_encoded_query:
+    {Path.parse(Path.bytes("/a%3Fb")) == Done{[[97, 63, 98]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 19: letter case is kept
+law parse_case_kept:
+    {Path.parse(Path.bytes("/A/b")) == Done{[[65], [98]]} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Byte 300 isn't a byte
+law parse_not_a_byte:
+    {Path.parse([47, 300]) == Fail{Path.NotAByte{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# Case 2: a raw byte above 127 is not allowed
+law parse_high_byte:
+    {Path.parse([47, 200]) == Fail{Path.InvalidByte{}} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+
+# U1: an accepted path started with "/"
+law accepts_only_absolute:
+    for +b: List<&2, U32>
+    for p: List<&2, List<&2, U32>>
+    for e: {Path.parse(b) == Done{p} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+    {Path.starts_with_slash(b) == True{} : Bool}
+
+# U2: no segment of an accepted path is "." or ".."
+law no_dot_segments:
+    for +b: List<&2, U32>
+    for p: List<&2, List<&2, U32>>
+    for e: {Path.parse(b) == Done{p} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+    {Path.no_dot_segs(p) == True{} : Bool}
+
+# U3: no segment of an accepted path contains "/", "\" or a control byte
+law no_unsafe_bytes:
+    for +b: List<&2, U32>
+    for p: List<&2, List<&2, U32>>
+    for e: {Path.parse(b) == Done{p} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+    {Path.all_safe(p) == True{} : Bool}
+
+# U4: an accepted path has at least one segment, and only the last may be empty
+law empty_only_last:
+    for +b: List<&2, U32>
+    for p: List<&2, List<&2, U32>>
+    for e: {Path.parse(b) == Done{p} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+    {Path.empty_only_last(p) == True{} : Bool}
