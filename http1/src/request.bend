@@ -26,3 +26,7 @@ type RequestLine is Data:
 # trimmed from both ends
 type Field is Data:
   Field{name: List<&2, U32>, value: List<&2, U32>}
+
+# A whole request. headers are in the order received, names as sent.
+type Request is Data:
+  Request{method: List<&2, U32>, target: Target, version: Version, headers: List<&2, Field>, body: List<&2, U32>}

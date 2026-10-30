@@ -4,6 +4,10 @@ import Base
 import ./LAWS.bend as Laws
 import ./src/bytes.bend as Byte
 import ./proof/request_line.bend as LineProof
+import ./src/head.bend as Head
+import ./src/parse.bend as Parse
+import ./proof/framing.bend as FrameProof
+import ./proof/suffix.bend as SufProof
 
 
 def Laws.line_root():
@@ -180,4 +184,68 @@ def Laws.head_max_fields():
 
 def Laws.head_section():
   {==}
+
+
+def Laws.parse_cl():
+  {==}
+
+def Laws.parse_cl_short():
+  {==}
+
+def Laws.parse_no_framing():
+  {==}
+
+def Laws.parse_cl_zero():
+  {==}
+
+def Laws.parse_cl_any_case():
+  {==}
+
+def Laws.parse_cl_te():
+  {==}
+
+def Laws.parse_te_http10():
+  {==}
+
+def Laws.parse_two_cl():
+  {==}
+
+def Laws.parse_cl_list():
+  {==}
+
+def Laws.parse_cl_empty():
+  {==}
+
+def Laws.parse_cl_plus():
+  {==}
+
+def Laws.parse_cl_hex():
+  {==}
+
+def Laws.parse_cl_space():
+  {==}
+
+def Laws.parse_cl_leading_zero():
+  {==}
+
+def Laws.parse_cl_eleven_digits():
+  {==}
+
+def Laws.parse_cl_overflow():
+  {==}
+
+def Laws.parse_cl_too_large():
+  {==}
+
+def Laws.cl_and_te_rejected(l, i, m, t, v, hs, body, rest, e):
+  %e : FrameProof.P4(_)
+  FrameProof.p4_head(Head.head(l, i), Parse.body_limit(l))
+
+def Laws.one_content_length(l, i, m, t, v, hs, body, rest, e):
+  %e : FrameProof.P5(_)
+  FrameProof.p5_head(Head.head(l, i), Parse.body_limit(l))
+
+def Laws.leftover_is_suffix(l, i, r, rest, e):
+  %e : SufProof.PS(_, i)
+  SufProof.ps_head(Head.head(l, i), i, Parse.body_limit(l), SufProof.hs_head(l, i))
 

@@ -6,6 +6,8 @@ import ./src/request.bend as Req
 import ./src/request_line.bend as Line
 import ./src/limits.bend as Limits
 import ./src/head.bend as Head
+import ./src/framing.bend as Framing
+import ./src/parse.bend as Parse
 
 
 # Request line examples (the line without its CRLF)
@@ -249,3 +251,111 @@ law head_max_fields:
 # The whole head over 40 bytes
 law head_section:
     {Head.head(Limits.Limits{20, 12, 40, 2, 100, 10}, Path.bytes("GET / HTTP/1.1\r\nAAAA: 12345\r\nBBBB: 1234")) == Head.HeadRejected{Reason.HeaderTooLarge{}} : Head.HeadResult}
+
+
+# Whole requests: framing with Content-Length
+
+# The body is exactly Content-Length bytes; the rest is the next request
+law parse_cl:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhelloGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Content-Length"), Path.bytes("5")}], Path.bytes("hello")}, Path.bytes("GET")} : Parse.Outcome}
+
+# Fewer body bytes than declared: wait for more
+law parse_cl_short:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhel")) == Parse.NeedMore{False{}} : Parse.Outcome}
+
+# No framing fields: an empty body, whatever the method
+law parse_no_framing:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\n\r\nGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [], []}, Path.bytes("GET")} : Parse.Outcome}
+
+# Content-Length: 0
+law parse_cl_zero:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\nX")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Content-Length"), Path.bytes("0")}], []}, Path.bytes("X")} : Parse.Outcome}
+
+# Field names match in any case, and a GET can have a body
+law parse_cl_any_case:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nCONTENT-LENGTH: 2\r\n\r\nab")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("CONTENT-LENGTH"), Path.bytes("2")}], Path.bytes("ab")}, []} : Parse.Outcome}
+
+# Both framing fields (CL.TE / TE.CL smuggling)
+law parse_cl_te:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n")) == Parse.Rejected{Reason.ContentLengthWithTransferEncoding{}} : Parse.Outcome}
+
+# Transfer-Encoding in HTTP/1.0
+law parse_te_http10:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.0\r\nTransfer-Encoding: chunked\r\n\r\n")) == Parse.Rejected{Reason.TransferEncodingInHttp10{}} : Parse.Outcome}
+
+# Two Content-Length lines, even identical
+law parse_two_cl:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5\r\ncontent-length: 5\r\n\r\nhello")) == Parse.Rejected{Reason.MultipleContentLength{}} : Parse.Outcome}
+
+# A list of values
+law parse_cl_list:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5, 5\r\n\r\nhello")) == Parse.Rejected{Reason.MultipleContentLength{}} : Parse.Outcome}
+
+# An empty value
+law parse_cl_empty:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: \r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+
+# A sign
+law parse_cl_plus:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: +5\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+
+# Hex
+law parse_cl_hex:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 0x10\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+
+# A space inside the value
+law parse_cl_space:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5 5\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+
+# A leading zero (some servers read 0200 as octal)
+law parse_cl_leading_zero:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 0200\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+
+# More than 10 digits
+law parse_cl_eleven_digits:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 99999999999\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+
+# Too big for a U32
+law parse_cl_overflow:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 4294967296\r\n\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
+
+# Over the body limit
+law parse_cl_too_large:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 2000000\r\n\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
+
+
+# H1: after Parsed, the leftover is the end of the input
+law leftover_is_suffix:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for r: Req.Request
+    for rest: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Parsed{r, rest} : Parse.Outcome}
+    exs used: List<&2, U32>
+    {i == List.append(&2, U32, used, rest) : List<&2, U32>}
+
+# H4: a request with both Content-Length and Transfer-Encoding is never Parsed
+law cl_and_te_rejected:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for m: List<&2, U32>
+    for t: Req.Target
+    for v: Req.Version
+    for hs: List<&2, Req.Field>
+    for body: List<&2, U32>
+    for rest: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Parsed{Req.Request{m, t, v, hs, body}, rest} : Parse.Outcome}
+    {Framing.both_framing(hs) == False{} : Bool}
+
+# H5: a Parsed request has no Content-Length, or exactly one that is the body's length
+law one_content_length:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for m: List<&2, U32>
+    for t: Req.Target
+    for v: Req.Version
+    for hs: List<&2, Req.Field>
+    for body: List<&2, U32>
+    for rest: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Parsed{Req.Request{m, t, v, hs, body}, rest} : Parse.Outcome}
+    {Framing.content_length_ok(hs, body) == True{} : Bool}

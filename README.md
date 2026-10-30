@@ -58,7 +58,7 @@ urlpath/
   LAWS.bend      statements that must hold
   PROOF.bend     one proof per law; the file you check
   proof/         the helper lemmas those proofs use
-http1/           same shape; in progress (request line and header fields so far)
+http1/           same shape; in progress (request line, header fields and Content-Length so far)
 ```
 
 ## Checking the proofs

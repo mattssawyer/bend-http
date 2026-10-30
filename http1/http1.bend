@@ -3,8 +3,8 @@
 # Last Updated: 2026-10-30
 # Version: 1.0.0
 #
-# The pieces are in src/. The types are in src/request.bend and the
-# rejection reasons in src/reason.bend.
+# The pieces are in src/. The types are in src/request.bend, the outcome in
+# src/parse.bend and the rejection reasons in src/reason.bend.
 
 import Base
 import ./src/reason.bend as Reason
@@ -12,6 +12,7 @@ import ./src/request.bend as Req
 import ./src/request_line.bend as Line
 import ./src/limits.bend as Limits
 import ./src/head.bend as Head
+import ./src/parse.bend as Parse
 
 
 # Parse a request line, without its CRLF: "GET /a?x HTTP/1.1"
@@ -29,3 +30,8 @@ def default_limits() -> Limits.Limits:
 # Read the head of a request (request line and fields) from raw bytes
 def head(limits: Limits.Limits, input: List<&2, U32>) -> Head.HeadResult:
   Head.head(limits, input)
+
+# Parse one request from everything received on the connection that hasn't
+# been used yet. After Parsed, call parse again on the leftover.
+def parse(limits: Limits.Limits, input: List<&2, U32>) -> Parse.Outcome:
+  Parse.parse(limits, input)

@@ -149,3 +149,11 @@ def starts_with(b: List<&2, U32>, +x: U32) -> Bool:
         False{}
     case Con{+h, t}:
         U32.is_eq(h, x)
+
+# ASCII lowercase of every byte
+def lower_all(b: List<&2, U32>) -> List<&2, U32>:
+  match b:
+    case Nil{}:
+        Nil{}
+    case Con{+h, t}:
+        Con{lower(h), lower_all(t)}
