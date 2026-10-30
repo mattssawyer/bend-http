@@ -53,9 +53,11 @@ It answers in one of three ways:
 
 ```
 urlpath/
-  urlpath.bend   the code
+  urlpath.bend   parse, plus the other public functions
+  src/           the code, one file per piece (decode, dots, render, ...)
   LAWS.bend      statements that must hold
   PROOF.bend     one proof per law; the file you check
+  proof/         the helper lemmas those proofs use
 http1/           same shape, not started yet
 ```
 
