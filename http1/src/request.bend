@@ -21,3 +21,8 @@ type Target is Data:
 # "GET /a?x HTTP/1.1". The method is kept as sent: methods are case-sensitive.
 type RequestLine is Data:
   RequestLine{method: List<&2, U32>, target: Target, version: Version}
+
+# One header field: the name as sent, and the value with spaces and tabs
+# trimmed from both ends
+type Field is Data:
+  Field{name: List<&2, U32>, value: List<&2, U32>}
