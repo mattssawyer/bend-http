@@ -336,3 +336,71 @@ law empty_only_last:
     for p: List<&2, List<&2, U32>>
     for e: {Path.parse(b) == Done{p} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
     {Path.empty_only_last(p) == True{} : Bool}
+
+
+# render examples
+law render_ab:
+    {Path.render([[97], [98, 32]]) == Path.bytes("/a/b%20") : List<&2, U32>}
+
+law render_root:
+    {Path.render([[]]) == Path.bytes("/") : List<&2, U32>}
+
+law render_trailing:
+    {Path.render([[97], []]) == Path.bytes("/a/") : List<&2, U32>}
+
+law render_utf8:
+    {Path.render([[195, 169]]) == Path.bytes("/%C3%A9") : List<&2, U32>}
+
+law render_percent:
+    {Path.render([[37]]) == Path.bytes("/%25") : List<&2, U32>}
+
+law render_slash:
+    {Path.render([[47]]) == Path.bytes("/%2F") : List<&2, U32>}
+
+law render_keeps_pchar:
+    {Path.render([Path.bytes("a:b@c!$&'()*+,;=-._~")]) == Path.bytes("/a:b@c!$&'()*+,;=-._~") : List<&2, U32>}
+
+# is_prefix examples
+law prefix_yes:
+    {Path.is_prefix([[97]], [[97], [98]]) == True{} : Bool}
+
+law prefix_empty:
+    {Path.is_prefix([], [[97]]) == True{} : Bool}
+
+law prefix_same:
+    {Path.is_prefix([[97], [98]], [[97], [98]]) == True{} : Bool}
+
+# "/static" is not a prefix of "/static../x"
+law prefix_segmentwise:
+    {Path.is_prefix(Path.split(Path.bytes("static")), [Path.bytes("static.."), [120]]) == False{} : Bool}
+
+law prefix_longer:
+    {Path.is_prefix([[97], [98]], [[97]]) == False{} : Bool}
+
+
+# U5: rendering an accepted path and parsing it again gives the same segments
+law idempotent:
+    for +b: List<&2, U32>
+    for +p: List<&2, List<&2, U32>>
+    for +e: {Path.parse(b) == Done{p} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+    {Path.parse(Path.render(p)) == Done{p} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+
+# U6: rendering an accepted path never starts with "//"
+law render_no_double_slash:
+    for +b: List<&2, U32>
+    for +p: List<&2, List<&2, U32>>
+    for +e: {Path.parse(b) == Done{p} : Result<&2, &2, Path.PathError, List<&2, List<&2, U32>>>}
+    {Path.starts_with_double_slash(Path.render(p)) == False{} : Bool}
+
+# U7: every byte render writes is "/", a pchar, or part of an uppercase %XX
+law render_canonical:
+    for p: List<&2, List<&2, U32>>
+    {Path.canonical(Path.render(p)) == True{} : Bool}
+
+# U8: if a is a prefix of b, then b is a followed by some more segments
+law is_prefix_sound:
+    for a: List<&2, List<&2, U32>>
+    for +b: List<&2, List<&2, U32>>
+    for +h: {Path.is_prefix(a, b) == True{} : Bool}
+    exs rest: List<&2, List<&2, U32>>
+    {b == List.append(&2, List<&2, U32>, a, rest) : List<&2, List<&2, U32>>}

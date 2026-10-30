@@ -115,6 +115,10 @@ def hex_val.if(+b: U32, digit: Bool, upper: Bool) -> U32:
 def hex_val(+b: U32) -> U32:
   hex_val.if(b, is_digit(b), (b >= 65 : U32) && (b <= 70 : U32))
 
+# The byte written as two hex digit values: hi * 16 + lo
+def hex_pair(+hi: U32, +lo: U32) -> U32:
+  U32.add(U32.mul(hi, 16), lo)
+
 # Put a byte in front of a decoded result, unless it already failed
 def ok_cons(b: U32, r: Result<&2, &2, PathError, List<&2, U32>>) -> Result<&2, &2, PathError, List<&2, U32>>:
   match r:
@@ -180,7 +184,7 @@ def decode.step(+b: U32, st: DecState, r: Result<&2, &2, PathError, List<&2, U32
     case Hex1{}:
         decode.step.hex1(r, is_hex(b))
     case Hex2{+hi}:
-        decode.step.hex2(U32.add(U32.mul(hi, 16), hex_val(b)), r, is_hex(b))
+        decode.step.hex2(hex_pair(hi, hex_val(b)), r, is_hex(b))
 
 # End of segment: fine in normal text, BadPercent in the middle of an escape
 def decode.end(st: DecState) -> Result<&2, &2, PathError, List<&2, U32>>:
@@ -569,3 +573,166 @@ def only_last_empty(p: List<&2, List<&2, U32>>) -> Bool:
 # At least one segment, and only the last may be empty
 def empty_only_last(+p: List<&2, List<&2, U32>>) -> Bool:
   Bool.not(List.is_empty(&2, List<&2, U32>, p)) && only_last_empty(p)
+
+
+# ---- render (step 6) ----
+
+# The uppercase hex digits, "0"-"9" then "A"-"F"
+def hex_digits() -> List<&2, U32>:
+  [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
+
+def hex_digit.if(eq: Bool, d: U32, other: U32) -> U32:
+  match eq:
+    case True{}:
+        d
+    case False{}:
+        other
+
+# Find digit number n in the table (i counts from 0). Not found gives "0".
+def hex_digit.go(tbl: List<&2, U32>, +n: U32, +i: U32) -> U32:
+  match tbl:
+    case Nil{}:
+        48
+    case Con{d, rest}:
+        hex_digit.if(U32.is_eq(n, i), d, hex_digit.go(rest, n, U32.inc(i)))
+
+# The uppercase hex digit for a value 0-15
+def hex_digit(+n: U32) -> U32:
+  hex_digit.go(hex_digits(), n, 0)
+
+# High and low halves of a byte: 0xC3 -> 0xC and 0x3
+def hi_nibble(+c: U32) -> U32:
+  U32.shrn(c, 4n)
+
+def lo_nibble(+c: U32) -> U32:
+  U32.and(c, 15)
+
+def enc_byte.if(pchar: Bool, +c: U32, rest: List<&2, U32>) -> List<&2, U32>:
+  match pchar:
+    case True{}:
+        Con{c, rest}
+    case False{}:
+        Con{37, Con{hex_digit(hi_nibble(c)), Con{hex_digit(lo_nibble(c)), rest}}}
+
+# Write byte c in front of rest: as itself if it's a pchar, else as %XX
+def enc_byte(+c: U32, rest: List<&2, U32>) -> List<&2, U32>:
+  enc_byte.if(is_pchar(c), c, rest)
+
+# Encode one segment
+def enc_seg(s: List<&2, U32>) -> List<&2, U32>:
+  match s:
+    case Nil{}:
+        Nil{}
+    case Con{+c, t}:
+        enc_byte(c, enc_seg(t))
+
+# Encode every segment
+def enc_segs(p: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match p:
+    case Nil{}:
+        Nil{}
+    case Con{s, r}:
+        Con{enc_seg(s), enc_segs(r)}
+
+# Turn segments back into a path: "/" + segments joined by "/", with every
+# byte that isn't a pchar written as %XX (uppercase hex).
+# [[97], [98, 32]] -> "/a/b%20"
+def render(p: List<&2, List<&2, U32>>) -> List<&2, U32>:
+  Con{47, join(enc_segs(p))}
+
+
+# ---- What the render laws promise ----
+
+# Does the path start with "//"?
+def starts_with_double_slash.two(+x: U32, t: List<&2, U32>) -> Bool:
+  match t:
+    case Nil{}:
+        False{}
+    case Con{+y, r}:
+        U32.is_eq(x, 47) && U32.is_eq(y, 47)
+
+def starts_with_double_slash(b: List<&2, U32>) -> Bool:
+  match b:
+    case Nil{}:
+        False{}
+    case Con{+x, t}:
+        starts_with_double_slash.two(x, t)
+
+# An uppercase hex digit: "0"-"9" or "A"-"F"
+def is_upper_hex(+c: U32) -> Bool:
+  is_digit(c) || (c >= 65 : U32) && (c <= 70 : U32)
+
+def canonical.next(pchar: Bool, pct: Bool) -> Nat:
+  match pchar:
+    case True{}:
+        0n
+    case False{}:
+        match pct:
+          case True{}:
+              2n
+          case False{}:
+              0n
+
+def canonical.plain(pchar: Bool, slash: Bool, pct: Bool, r: Bool) -> Bool:
+  match pchar:
+    case True{}:
+        r
+    case False{}:
+        match slash:
+          case True{}:
+              r
+          case False{}:
+              match pct:
+                case True{}:
+                    r
+                case False{}:
+                    False{}
+
+# k is how many hex digits must come next (2 right after "%")
+def canonical.go(b: List<&2, U32>, k: Nat) -> Bool:
+  match b:
+    case Nil{}:
+        match k:
+          case 0n:
+              True{}
+          case 1n+n:
+              False{}
+    case Con{+c, t}:
+        match k:
+          case 0n:
+              canonical.plain(is_pchar(c), U32.is_eq(c, 47), U32.is_eq(c, 37),
+                canonical.go(t, canonical.next(is_pchar(c), U32.is_eq(c, 37))))
+          case 1n+n:
+              is_upper_hex(c) && canonical.go(t, n)
+
+# Every byte is "/", a pchar, or part of a %XX with uppercase hex digits
+def canonical(b: List<&2, U32>) -> Bool:
+  canonical.go(b, 0n)
+
+
+# ---- is_prefix ----
+
+# Are two segments the same bytes?
+def bytes_eq(a: List<&2, U32>, b: List<&2, U32>) -> Bool:
+  match a:
+    case Nil{}:
+        List.is_empty(&2, U32, b)
+    case Con{+x, at}:
+        match b:
+          case Nil{}:
+              False{}
+          case Con{+y, bt}:
+              U32.is_eq(x, y) && bytes_eq(at, bt)
+
+# Are a's segments the first segments of b? Compared segment by segment,
+# so /static is not a prefix of /static../x
+def is_prefix(a: List<&2, List<&2, U32>>, b: List<&2, List<&2, U32>>) -> Bool:
+  match a:
+    case Nil{}:
+        True{}
+    case Con{x, ar}:
+        match b:
+          case Nil{}:
+              False{}
+          case Con{y, br}:
+              bytes_eq(x, y) && is_prefix(ar, br)
