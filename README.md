@@ -58,7 +58,7 @@ urlpath/
   LAWS.bend      statements that must hold
   PROOF.bend     one proof per law; the file you check
   proof/         the helper lemmas those proofs use
-http1/           same shape, not started yet
+http1/           same shape; in progress (the request line so far)
 ```
 
 ## Checking the proofs
@@ -67,6 +67,7 @@ You need Bend 2 installed at `~/.bend/bin/bend`. From the repo root:
 
 ```sh
 ~/.bend/bin/bend urlpath/PROOF.bend
+~/.bend/bin/bend http1/PROOF.bend
 ```
 
 It should print `ALL PROOFS CHECK`. For the full check, add `--verdict`. This rechecks everything with the BendTT kernel, which needs Lean 4.34.0:
@@ -76,6 +77,7 @@ curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh 
   | sh -s -- -y --default-toolchain leanprover/lean4:v4.34.0
 
 ~/.bend/bin/bend urlpath/PROOF.bend --verdict
+~/.bend/bin/bend http1/PROOF.bend --verdict
 ```
 
 The first `--verdict` run builds the kernel and takes about 15 seconds. After that a check takes under a second.
