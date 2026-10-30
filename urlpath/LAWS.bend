@@ -100,3 +100,48 @@ law join_ab:
 law join_split:
     for b: List<&2, U32>
     {Path.join(Path.split(b)) == b : List<&2, U32>}
+
+
+# Decode function (one segment)
+law decode_plain_abc:
+    {Path.decode(Path.bytes("abc")) == Done{[97, 98, 99]} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_empty:
+    {Path.decode([]) == Done{[]} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_upper:
+    {Path.decode(Path.bytes("%41")) == Done{[65]} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_lower:
+    {Path.decode(Path.bytes("%2f")) == Done{[47]} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_once:
+    {Path.decode(Path.bytes("%2541")) == Done{[37, 52, 49]} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_utf8:
+    {Path.decode(Path.bytes("%C3%A9")) == Done{[195, 169]} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_bad_hex:
+    {Path.decode(Path.bytes("%G1")) == Fail{Path.BadPercent{}} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_short:
+    {Path.decode(Path.bytes("a%4")) == Fail{Path.BadPercent{}} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_lone_pct:
+    {Path.decode(Path.bytes("%")) == Fail{Path.BadPercent{}} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_space:
+    {Path.decode(Path.bytes("a b")) == Fail{Path.InvalidByte{}} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_high_byte:
+    {Path.decode([200]) == Fail{Path.InvalidByte{}} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+law decode_first_error:
+    {Path.decode(Path.bytes("a b%G1")) == Fail{Path.InvalidByte{}} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+
+# Text with nothing to decode comes back unchanged
+law decode_plain:
+    for b: List<&2, U32>
+    for e: {Path.all_pchar(b) == True{} : Bool}
+    {Path.decode(b) == Done{b} : Result<&2, &2, Path.PathError, List<&2, U32>>}

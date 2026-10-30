@@ -195,3 +195,75 @@ def Laws.join_split(b):
       {==}
     case Con{+h, +t}:
       join_split.at(U32.is_eq(h, 47), h, t, {==}, Laws.join_split(t), split_ne(t))
+
+
+# ---- Percent-decoding ----
+
+def Laws.decode_plain_abc():
+  {==}
+
+def Laws.decode_empty():
+  {==}
+
+def Laws.decode_upper():
+  {==}
+
+def Laws.decode_lower():
+  {==}
+
+def Laws.decode_once():
+  {==}
+
+def Laws.decode_utf8():
+  {==}
+
+def Laws.decode_bad_hex():
+  {==}
+
+def Laws.decode_short():
+  {==}
+
+def Laws.decode_lone_pct():
+  {==}
+
+def Laws.decode_space():
+  {==}
+
+def Laws.decode_high_byte():
+  {==}
+
+def Laws.decode_first_error():
+  {==}
+
+# True can't equal False
+law true_ne_false:
+  for e: {False{} == True{} : Bool}
+  Empty
+
+def true_ne_false(e):
+  %e : Bool.pick(Type, _, Empty, Unit)
+  Unit{}
+
+# One step of decode_plain, split on whether the first byte is a pchar
+law decode_plain.at:
+  for k: Bool
+  for +h: U32
+  for +t: List<&2, U32>
+  for e: {Bool.and(k, Path.all_pchar(t)) == True{} : Bool}
+  for ih: {Path.all_pchar(t) == True{} : Bool} -> {Path.decode.go(t, Path.Plain{}) == Done{t} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+  {Path.decode.step.plain(h, Path.decode.go(t, Path.decode.next.plain(k, U32.is_eq(h, 37))), k, U32.is_eq(h, 37)) == Done{Con{h, t}} : Result<&2, &2, Path.PathError, List<&2, U32>>}
+
+def decode_plain.at(k, h, t, e, ih):
+  match k:
+    case True{}:
+      %ih(e) : {Path.ok_cons(h, Path.decode.go(t, Path.Plain{})) == Path.ok_cons(h, _) : Result<&2, &2, Path.PathError, List<&2, U32>>}
+      {==}
+    case False{}:
+      absurd({Path.decode.step.plain(h, Path.decode.go(t, Path.decode.next.plain(False{}, U32.is_eq(h, 37))), False{}, U32.is_eq(h, 37)) == Done{Con{h, t}} : Result<&2, &2, Path.PathError, List<&2, U32>>}, true_ne_false(e))
+
+def Laws.decode_plain(b, e):
+  match b:
+    case Nil{}:
+      {==}
+    case Con{+h, +t}:
+      decode_plain.at(Path.is_pchar(h), h, t, e, e2 => Laws.decode_plain(t, e2))
