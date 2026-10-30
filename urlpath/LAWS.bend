@@ -75,3 +75,28 @@ law pchar_slash:
 
 law pchar_mod: 
     {Path.is_pchar(37) == False{} : Bool}
+
+
+# Split function
+law split_empty:
+    {Path.split([]) == [[]] : List<&2, List<&2, U32>>}
+
+law split_root:
+    {Path.split([47]) == [[], []] : List<&2, List<&2, U32>>}
+
+law split_ab:
+    {Path.split([47, 97, 47, 98]) == [[], [97], [98]] : List<&2, List<&2, U32>>}
+
+law split_trailing:
+    {Path.split([47, 97, 47]) == [[], [97], []] : List<&2, List<&2, U32>>}
+
+
+# Join function
+law join_ab:
+    {Path.join([[], [97], [98]]) == [47, 97, 47, 98] : List<&2, U32>}
+
+
+# Round trip: joining a split gives back the original bytes
+law join_split:
+    for b: List<&2, U32>
+    {Path.join(Path.split(b)) == b : List<&2, U32>}
