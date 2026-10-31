@@ -324,6 +324,171 @@ law parse_cl_too_large:
     {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 2000000\r\n\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
 
 
+# Chunked bodies
+
+# One chunk, then the last chunk; what follows is the next request
+law chunked_simple:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\nGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, Path.bytes("GET")} : Parse.Outcome}
+
+# The chunks are joined
+law chunked_two:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhe\r\n3\r\nllo\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# Part of a chunk: wait for more
+law chunked_partial_data:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel")) == Parse.NeedMore{False{}} : Parse.Outcome}
+
+# Half of the CRLF after the data
+law chunked_partial_crlf:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r")) == Parse.NeedMore{False{}} : Parse.Outcome}
+
+# No last chunk yet
+law chunked_no_last:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n")) == Parse.NeedMore{False{}} : Parse.Outcome}
+
+# Trailers are checked, then dropped
+law chunked_trailer:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-T: 1\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# Leading zeros are fine, also in the last chunk
+law chunked_leading_zeros:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0005\r\nhello\r\n000\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# Sizes are hex, either case
+law chunked_hex:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nA\r\n0123456789\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("0123456789")}, []} : Parse.Outcome}
+
+# "0x" is not part of the size
+law chunked_0x:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0x5\r\nhello\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# A sign
+law chunked_plus:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n+5\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# A space before the size
+law chunked_space_before:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n\u{20}5\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# A space after the size
+law chunked_space_after:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5 \r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# No size
+law chunked_empty_size:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# More than 8 significant hex digits
+law chunked_overflow:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nffffffffffffffff0000000000000005\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# A chunk over the body limit
+law chunked_too_large:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n200000\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
+
+# A bare LF in a size line
+law chunked_bare_lf_ext:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2;\nxx\r\n")) == Parse.Rejected{Reason.BareLF{}} : Parse.Outcome}
+
+# A bare CR in a size line
+law chunked_bare_cr:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\r;a")) == Parse.Rejected{Reason.BareCR{}} : Parse.Outcome}
+
+# A size line ended by LF alone
+law chunked_lf_size:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\nxx\r\n")) == Parse.Rejected{Reason.BareLF{}} : Parse.Outcome}
+
+# Extensions, with a quoted value, are parsed and dropped
+law chunked_ext_ok:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5;a=b;c=\"q\\\"x\"\r\nhello\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# Spaces after ";" and around "=" are allowed
+law chunked_ext_spaces:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5; a = b\r\nhello\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# An empty extension
+law chunked_ext_empty:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5;\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# An extension with no name
+law chunked_ext_no_name:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5;=x\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# An unterminated quoted value
+law chunked_ext_unterminated:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5;a=\"x\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# A space inside a token value
+law chunked_ext_space_value:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5;a=b c\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# A space before ";"
+law chunked_ext_space_before:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5 ;a\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# More data than the size
+law chunked_spill:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nAAAAAXX\r\n")) == Parse.Rejected{Reason.MissingChunkDataCRLF{}} : Parse.Outcome}
+
+# A CR after the data, but not CRLF
+law chunked_spill_cr:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nAAAAA\rX2\r\n")) == Parse.Rejected{Reason.MissingChunkDataCRLF{}} : Parse.Outcome}
+
+# Trailers go through the header field checks
+law chunked_bad_trailer:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n bad\r\n\r\n")) == Parse.Rejected{Reason.ObsFold{}} : Parse.Outcome}
+
+
+# Transfer-Encoding values
+
+# "chunked" in any case
+law te_upper:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: CHUNKED\r\n\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("CHUNKED")}], []}, []} : Parse.Outcome}
+
+# Other codings before chunked
+law te_gzip_chunked:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: gzip, chunked\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.UnsupportedTransferCoding{}} : Parse.Outcome}
+
+# "identity"
+law te_identity:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: identity\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.UnsupportedTransferCoding{}} : Parse.Outcome}
+
+# chunked must come last
+law te_not_final:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked, gzip\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.ChunkedNotFinal{}} : Parse.Outcome}
+
+# An unknown coding
+law te_unknown:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: x\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.ChunkedNotFinal{}} : Parse.Outcome}
+
+# Not quite "chunked"
+law te_obfuscated:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: xchunked\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.ChunkedNotFinal{}} : Parse.Outcome}
+
+# chunked twice
+law te_twice:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked, chunked\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.ChunkedAppliedTwice{}} : Parse.Outcome}
+
+# Parameters on chunked
+law te_params:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked;a=b\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidTransferEncoding{}} : Parse.Outcome}
+
+# An empty value
+law te_empty:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: \r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidTransferEncoding{}} : Parse.Outcome}
+
+# An empty list member (stricter than the RFC)
+law te_leading_comma:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: ,chunked\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidTransferEncoding{}} : Parse.Outcome}
+
+# An empty list member at the end
+law te_trailing_comma:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked,\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidTransferEncoding{}} : Parse.Outcome}
+
+# Two Transfer-Encoding lines
+law te_two_lines:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n")) == Parse.Rejected{Reason.ChunkedAppliedTwice{}} : Parse.Outcome}
+
 # H1: after Parsed, the leftover is the end of the input
 law leftover_is_suffix:
     for +l: Limits.Limits

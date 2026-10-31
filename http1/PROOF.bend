@@ -239,13 +239,134 @@ def Laws.parse_cl_too_large():
 
 def Laws.cl_and_te_rejected(l, i, m, t, v, hs, body, rest, e):
   %e : FrameProof.P4(_)
-  FrameProof.p4_head(Head.head(l, i), Parse.body_limit(l))
+  FrameProof.p4_head(Head.head(l, i), l)
 
 def Laws.one_content_length(l, i, m, t, v, hs, body, rest, e):
   %e : FrameProof.P5(_)
-  FrameProof.p5_head(Head.head(l, i), Parse.body_limit(l))
+  FrameProof.p5_head(Head.head(l, i), l)
 
 def Laws.leftover_is_suffix(l, i, r, rest, e):
   %e : SufProof.PS(_, i)
-  SufProof.ps_head(Head.head(l, i), i, Parse.body_limit(l), SufProof.hs_head(l, i))
+  SufProof.ps_head(Head.head(l, i), i, l, SufProof.hs_head(l, i))
+
+
+def Laws.chunked_simple():
+  {==}
+
+def Laws.chunked_two():
+  {==}
+
+def Laws.chunked_partial_data():
+  {==}
+
+def Laws.chunked_partial_crlf():
+  {==}
+
+def Laws.chunked_no_last():
+  {==}
+
+def Laws.chunked_trailer():
+  {==}
+
+def Laws.chunked_leading_zeros():
+  {==}
+
+def Laws.chunked_hex():
+  {==}
+
+def Laws.chunked_0x():
+  {==}
+
+def Laws.chunked_plus():
+  {==}
+
+def Laws.chunked_space_before():
+  {==}
+
+def Laws.chunked_space_after():
+  {==}
+
+def Laws.chunked_empty_size():
+  {==}
+
+def Laws.chunked_overflow():
+  {==}
+
+def Laws.chunked_too_large():
+  {==}
+
+def Laws.chunked_bare_lf_ext():
+  {==}
+
+def Laws.chunked_bare_cr():
+  {==}
+
+def Laws.chunked_lf_size():
+  {==}
+
+def Laws.chunked_ext_ok():
+  {==}
+
+def Laws.chunked_ext_spaces():
+  {==}
+
+def Laws.chunked_ext_empty():
+  {==}
+
+def Laws.chunked_ext_no_name():
+  {==}
+
+def Laws.chunked_ext_unterminated():
+  {==}
+
+def Laws.chunked_ext_space_value():
+  {==}
+
+def Laws.chunked_ext_space_before():
+  {==}
+
+def Laws.chunked_spill():
+  {==}
+
+def Laws.chunked_spill_cr():
+  {==}
+
+def Laws.chunked_bad_trailer():
+  {==}
+
+def Laws.te_upper():
+  {==}
+
+def Laws.te_gzip_chunked():
+  {==}
+
+def Laws.te_identity():
+  {==}
+
+def Laws.te_not_final():
+  {==}
+
+def Laws.te_unknown():
+  {==}
+
+def Laws.te_obfuscated():
+  {==}
+
+def Laws.te_twice():
+  {==}
+
+def Laws.te_params():
+  {==}
+
+def Laws.te_empty():
+  {==}
+
+def Laws.te_leading_comma():
+  {==}
+
+def Laws.te_trailing_comma():
+  {==}
+
+def Laws.te_two_lines():
+  {==}
 

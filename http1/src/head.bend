@@ -155,3 +155,10 @@ def head(limits: Limits.Limits, input: List<&2, U32>) -> HeadResult:
   match limits:
     case Limits.Limits{+rl, fl, hs, nf, b, ce}:
         head.first(Lines.next_line(input, rl), rl, hs, fl, U32.to_nat(nf))
+
+# Read trailer fields after the last chunk: the same checks and limits as
+# header fields, up to the empty line
+def trailers(limits: Limits.Limits, input: List<&2, U32>) -> HeadResult:
+  match limits:
+    case Limits.Limits{rl, fl, hs, nf, b, ce}:
+        head.fields(U32.to_nat(nf), input, hs, fl, False{}, Req.RequestLine{Nil{}, Req.Asterisk{}, Req.Http11{}})

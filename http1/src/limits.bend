@@ -15,3 +15,13 @@ type Limits is Data:
 
 def default_limits() -> Limits:
   Limits{8192, 8192, 65536, 100, 1048576, 1024}
+
+def body(l: Limits) -> U32:
+  match l:
+    case Limits{a, b, c, d, e, f}:
+        e
+
+def chunk_ext(l: Limits) -> U32:
+  match l:
+    case Limits{a, b, c, d, e, f}:
+        f
