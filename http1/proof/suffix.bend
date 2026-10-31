@@ -13,6 +13,7 @@ import ../src/request_line.bend as Line
 import ../src/head.bend as Head
 import ../src/framing.bend as Framing
 import ../src/parse.bend as Parse
+import ../src/host.bend as Host
 import ../src/chunked.bend as Chunked
 
 
@@ -765,11 +766,12 @@ law ps_body:
   for fs: List<&2, Req.Field>
   for +rest: List<&2, U32>
   for +i: List<&2, U32>
+  for +cont: Bool
   for ht: TakeSuf(mb, rest)
   for hh: Suf(i, rest)
-  PS(Parse.parse.body(mb, m, t, v, fs), i)
+  PS(Parse.parse.body(mb, m, t, v, fs, cont), i)
 
-def ps_body(mb, m, t, v, fs, rest, i, ht, hh):
+def ps_body(mb, m, t, v, fs, rest, i, cont, ht, hh):
   match mb:
     case None{}:
       Unit{}
@@ -786,11 +788,12 @@ law ps_chunked:
   for fs: List<&2, Req.Field>
   for +rest: List<&2, U32>
   for +i: List<&2, U32>
+  for +cont: Bool
   for hh: Suf(i, rest)
   for hc: CS(c, rest)
-  PS(Parse.parse.chunked(c, m, t, v, fs), i)
+  PS(Parse.parse.chunked(c, m, t, v, fs, cont), i)
 
-def ps_chunked(c, m, t, v, fs, rest, i, hh, hc):
+def ps_chunked(c, m, t, v, fs, rest, i, cont, hh, hc):
   match c:
     case Chunked.ChunkNeedMore{}:
       Unit{}
@@ -808,10 +811,11 @@ law ps_frame:
   for +rest: List<&2, U32>
   for +limits: Limits.Limits
   for +i: List<&2, U32>
+  for +cont: Bool
   for hh: Suf(i, rest)
-  PS(Parse.parse.frame(r, m, t, v, fs, rest, limits), i)
+  PS(Parse.parse.frame(r, m, t, v, fs, rest, limits, cont), i)
 
-def ps_frame(r, m, t, v, fs, rest, limits, i, hh):
+def ps_frame(r, m, t, v, fs, rest, limits, i, cont, hh):
   match r:
     case Fail{e}:
       Unit{}
@@ -820,10 +824,29 @@ def ps_frame(r, m, t, v, fs, rest, limits, i, hh):
         case Framing.NoBody{}:
           hh
         case Framing.Length{+n}:
-          ps_body(Byte.take(U32.to_nat(n), rest), m, t, v, fs, rest, i, take_suf(U32.to_nat(n), rest), hh)
+          ps_body(Byte.take(U32.to_nat(n), rest), m, t, v, fs, rest, i, cont, take_suf(U32.to_nat(n), rest), hh)
         case Framing.Chunked{}:
-          ps_chunked(Chunked.read(limits, rest), m, t, v, fs, rest, i, hh,
+          ps_chunked(Chunked.read(limits, rest), m, t, v, fs, rest, i, cont, hh,
             cs_chunks(1n+List.length(&2, U32, rest), rest, 0, limits))
+
+law ps_checks:
+  for r: Result<&2, &2, Reason.Reason, Bool>
+  for m: List<&2, U32>
+  for t: Req.Target
+  for +v: Req.Version
+  for +fs: List<&2, Req.Field>
+  for +rest: List<&2, U32>
+  for +limits: Limits.Limits
+  for +i: List<&2, U32>
+  for hh: Suf(i, rest)
+  PS(Parse.parse.checks(r, m, t, v, fs, rest, limits), i)
+
+def ps_checks(r, m, t, v, fs, rest, limits, i, hh):
+  match r:
+    case Fail{e}:
+      Unit{}
+    case Done{+cont}:
+      ps_frame(Framing.framing(v, fs, Limits.body(limits)), m, t, v, fs, rest, limits, i, cont, hh)
 
 law ps_head:
   for h: Head.HeadResult
@@ -840,5 +863,5 @@ def ps_head(h, i, limits, hh):
       Unit{}
     case Head.HeadParsed{rl, +fs, +rest}:
       match rl:
-        case Req.RequestLine{m, t, +v}:
-          ps_frame(Framing.framing(v, fs, Limits.body(limits)), m, t, v, fs, rest, limits, i, hh)
+        case Req.RequestLine{m, +t, +v}:
+          ps_checks(Host.checks(v, t, fs), m, t, v, fs, rest, limits, i, hh)

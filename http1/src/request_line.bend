@@ -7,6 +7,7 @@ import ../../urlpath/src/errors.bend as PathError
 import ./bytes.bend as Byte
 import ./reason.bend as Reason
 import ./request.bend as Req
+import ./host.bend as Host
 
 
 # ---- Query ----
@@ -153,16 +154,17 @@ def absolute.done(s: Req.Scheme, a: List<&2, U32>, r: Result<&2, &2, Reason.Reas
           case PathQuery{p, q}:
               Done{Req.Absolute{s, a, p, q}}
 
-def absolute.auth(empty: Bool, s: Req.Scheme, +a: List<&2, U32>, +rest: List<&2, U32>) -> Result<&2, &2, Reason.Reason, Req.Target>:
-  match empty:
+def absolute.auth(bad: Bool, s: Req.Scheme, +a: List<&2, U32>, +rest: List<&2, U32>) -> Result<&2, &2, Reason.Reason, Req.Target>:
+  match bad:
     case True{}:
         Fail{Reason.InvalidTarget{}}
     case False{}:
         absolute.done(s, a, path_query(abs_path(rest)))
 
-# What follows "http://": an authority, then an optional path and query
+# What follows "http://": an authority (a non-empty host [":" port], so no
+# "user@"), then an optional path and query
 def absolute.rest(s: Req.Scheme, +r: List<&2, U32>) -> Result<&2, &2, Reason.Reason, Req.Target>:
-  absolute.auth(List.is_empty(&2, U32, authority(r)), s, authority(r), after_authority(r))
+  absolute.auth(List.is_empty(&2, U32, authority(r)) || Bool.not(Host.host_ok(authority(r))), s, authority(r), after_authority(r))
 
 def absolute.http(m: Maybe<&2, List<&2, U32>>) -> Result<&2, &2, Reason.Reason, Req.Target>:
   match m:

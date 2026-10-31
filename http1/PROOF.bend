@@ -8,6 +8,8 @@ import ./src/head.bend as Head
 import ./src/parse.bend as Parse
 import ./proof/framing.bend as FrameProof
 import ./proof/suffix.bend as SufProof
+import ./proof/host.bend as HostProof
+import ./proof/target.bend as TargetProof
 
 
 def Laws.line_root():
@@ -368,5 +370,90 @@ def Laws.te_trailing_comma():
   {==}
 
 def Laws.te_two_lines():
+  {==}
+
+def Laws.http11_has_one_host(l, i, m, t, hs, body, rest, e):
+  %e : HostProof.P6(_)
+  HostProof.p6_head(Head.head(l, i), l)
+
+def Laws.origin_path_from_urlpath(l, i, m, p, q, v, hs, body, rest, e):
+  %e : TargetProof.P8(_)
+  TargetProof.p8_head(Head.head(l, i), l, TargetProof.h8_head(l, i))
+
+def Laws.absolute_path_from_urlpath(l, i, m, s, a, p, q, v, hs, body, rest, e):
+  %e : TargetProof.P8(_)
+  TargetProof.p8_head(Head.head(l, i), l, TargetProof.h8_head(l, i))
+
+
+def Laws.host_ok():
+  {==}
+
+def Laws.host_missing():
+  {==}
+
+def Laws.host_http10():
+  {==}
+
+def Laws.host_two():
+  {==}
+
+def Laws.host_list():
+  {==}
+
+def Laws.host_slash():
+  {==}
+
+def Laws.host_userinfo():
+  {==}
+
+def Laws.host_two_colons():
+  {==}
+
+def Laws.host_big_port():
+  {==}
+
+def Laws.host_max_port():
+  {==}
+
+def Laws.host_space():
+  {==}
+
+def Laws.host_empty():
+  {==}
+
+def Laws.host_ipv6():
+  {==}
+
+def Laws.host_bad_ipv6():
+  {==}
+
+def Laws.host_ipv4():
+  {==}
+
+def Laws.host_absolute():
+  {==}
+
+def Laws.host_mismatch():
+  {==}
+
+def Laws.host_absolute_userinfo():
+  {==}
+
+def Laws.expect_waiting():
+  {==}
+
+def Laws.expect_chunked():
+  {==}
+
+def Laws.expect_body_here():
+  {==}
+
+def Laws.expect_other():
+  {==}
+
+def Laws.expect_http10():
+  {==}
+
+def Laws.need_more_plain():
   {==}
 
