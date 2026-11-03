@@ -21,6 +21,7 @@ type ResponseError is Data:
   InvalidHeaderValue{}
   FramingHeader{}
   BodyNotAllowed{}
+  NotAByte{}
 
 
 # ---- Counting the body in decimal ----
@@ -124,6 +125,7 @@ def phrases() -> List<&2, Phrase>:
    Phrase{201, Path.bytes("Created")},
    Phrase{202, Path.bytes("Accepted")},
    Phrase{204, Path.bytes("No Content")},
+   Phrase{205, Path.bytes("Reset Content")},
    Phrase{206, Path.bytes("Partial Content")},
    Phrase{301, Path.bytes("Moved Permanently")},
    Phrase{302, Path.bytes("Found")},
@@ -174,8 +176,8 @@ def reason.go(tbl: List<&2, Phrase>, +s: U32) -> List<&2, U32>:
 def reason(+s: U32) -> List<&2, U32>:
   reason.go(phrases(), s)
 
-# 1xx, 204 and 304 never carry a body, so they get no Content-Length
-def has_body(+s: U32) -> Bool:
+# Does a status get a Content-Length? 1xx, 204 and 304 never do.
+def has_length(+s: U32) -> Bool:
   (s >= 200 : U32) && (Bool.not(U32.is_eq(s, 204)) && Bool.not(U32.is_eq(s, 304)))
 
 # "HTTP/1.1 404 Not Found", without its CRLF. The status is 100-599, so
@@ -209,7 +211,7 @@ def length_into(has: Bool, b: List<&2, U32>, t: List<&2, U32>) -> List<&2, U32>:
 # The status line, the fields, Content-Length, an empty line, then t
 def head_into(+s: U32, hs: List<&2, Req.Field>, b: List<&2, U32>, t: List<&2, U32>) -> List<&2, U32>:
   List.append(&2, U32, status_line(s),
-    fields_into(hs, length_into(has_body(s), b, Con{13, Con{10, Con{13, Con{10, t}}}})))
+    fields_into(hs, length_into(has_length(s), b, Con{13, Con{10, Con{13, Con{10, t}}}})))
 
 # The bytes to send. Build r with response: the laws only cover responses
 # it accepted.
@@ -217,6 +219,13 @@ def write(r: Response) -> List<&2, U32>:
   match r:
     case Response{+s, hs, +b}:
         head_into(s, hs, b, b)
+
+# What write sends, up to the body but without it: the answer to a HEAD
+# request, whose Content-Length is the length a GET would get
+def write_head(r: Response) -> List<&2, U32>:
+  match r:
+    case Response{+s, hs, +b}:
+        head_into(s, hs, b, Nil{})
 
 
 # ---- Checking the parts ----
@@ -276,17 +285,37 @@ def field_error(fs: List<&2, Req.Field>) -> ResponseError:
     case Con{+f, rest}:
         field_error.at(field_ok(f), f, u => field_error(rest))
 
-def response.body(ok: Bool, +s: U32, hs: List<&2, Req.Field>, b: List<&2, U32>) -> Result<&2, &2, ResponseError, Response>:
+# Every element is a byte: 0-255
+def all_bytes(b: List<&2, U32>) -> Bool:
+  match b:
+    case Nil{}:
+        True{}
+    case Con{+h, t}:
+        U32.is_le(h, 255) && all_bytes(t)
+
+# Can a status carry content? Not the ones without a Content-Length, and
+# not 205 (Reset Content), which still gets "Content-Length: 0"
+def has_content(+s: U32) -> Bool:
+  has_length(s) && Bool.not(U32.is_eq(s, 205))
+
+def response.bytes(ok: Bool, +s: U32, hs: List<&2, Req.Field>, b: List<&2, U32>) -> Result<&2, &2, ResponseError, Response>:
   match ok:
     case True{}:
         Done{Response{s, hs, b}}
+    case False{}:
+        Fail{NotAByte{}}
+
+def response.body(ok: Bool, +s: U32, hs: List<&2, Req.Field>, +b: List<&2, U32>) -> Result<&2, &2, ResponseError, Response>:
+  match ok:
+    case True{}:
+        response.bytes(all_bytes(b), s, hs, b)
     case False{}:
         Fail{BodyNotAllowed{}}
 
 def response.fields(ok: Bool, +s: U32, +hs: List<&2, Req.Field>, +b: List<&2, U32>) -> Result<&2, &2, ResponseError, Response>:
   match ok:
     case True{}:
-        response.body(has_body(s) || List.is_empty(&2, U32, b), s, hs, b)
+        response.body(has_content(s) || List.is_empty(&2, U32, b), s, hs, b)
     case False{}:
         Fail{field_error(hs)}
 
@@ -298,8 +327,8 @@ def response.status(ok: Bool, +s: U32, +hs: List<&2, Req.Field>, +b: List<&2, U3
         Fail{InvalidStatus{}}
 
 # Check the parts of a response: status 100-599, safe field names and values,
-# no Content-Length or Transfer-Encoding from the caller, and no body on a
-# status that can't have one
+# no Content-Length or Transfer-Encoding from the caller, no body on a
+# status that can't have one, and a body of bytes
 def response(+s: U32, +hs: List<&2, Req.Field>, +b: List<&2, U32>) -> Result<&2, &2, ResponseError, Response>:
   response.status(status_ok(s), s, hs, b)
 

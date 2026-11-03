@@ -798,6 +798,22 @@ law response_body_304:
     {Resp.response(304, [], Path.bytes("x")) == Fail{Resp.BodyNotAllowed{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
 
 
+# 205 (Reset Content) can't carry content either...
+law response_body_205:
+    {Resp.response(205, [], Path.bytes("x")) == Fail{Resp.BodyNotAllowed{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# ... but unlike 204 it says so with Content-Length: 0
+law write_reset_content:
+    {Resp.write(Resp.Response{205, [], []}) == Path.bytes("HTTP/1.1 205 Reset Content\r\nContent-Length: 0\r\n\r\n") : List<&2, U32>}
+
+# The body must be bytes
+law response_not_a_byte:
+    {Resp.response(200, [], [104, 256]) == Fail{Resp.NotAByte{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# The answer to HEAD: the head a GET gets, with its Content-Length, and no body
+law write_head_ok:
+    {Resp.write_head(Resp.Response{200, [], Path.bytes("hello")}) == Path.bytes("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n") : List<&2, U32>}
+
 # ---- Response readers: what the laws look at ----
 
 law reader_lengths:
@@ -835,16 +851,27 @@ law write_one_length:
     for +b: List<&2, U32>
     for +r: Resp.Response
     for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
-    for hb: {Resp.has_body(s) == True{} : Bool}
+    for hb: {Resp.has_length(s) == True{} : Bool}
     {Resp.content_lengths(Resp.write(r)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
 
-# R3: what write sends is a head, then the body, and the head ends at the
-# first CRLF CRLF, so no part of the body can be read as a header
+# R3: what write sends is write_head's bytes, then the body, and the head
+# ends at the first CRLF CRLF, so no part of the body can be read as a
+# header. A HEAD answer is the same head, without the body.
 law write_splits:
     for +s: U32
     for +hs: List<&2, Req.Field>
     for +b: List<&2, U32>
     for +r: Resp.Response
     for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
-    exs h: List<&2, U32>
-    {Resp.head_end(Resp.write(r)) == Byte.Cut{h, b} : Byte.Cut} & {Resp.write(r) == List.append(&2, U32, h, b) : List<&2, U32>}
+    {Resp.head_end(Resp.write(r)) == Byte.Cut{Resp.write_head(r), b} : Byte.Cut} & {Resp.write(r) == List.append(&2, U32, Resp.write_head(r), b) : List<&2, U32>}
+
+# R2 for write_head: the HEAD answer has the one Content-Length a GET would
+# get, the body's length
+law write_head_one_length:
+    for +s: U32
+    for +hs: List<&2, Req.Field>
+    for +b: List<&2, U32>
+    for +r: Resp.Response
+    for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+    for hb: {Resp.has_length(s) == True{} : Bool}
+    {Resp.content_lengths(Resp.write_head(r)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}

@@ -536,6 +536,18 @@ def Laws.response_body_204():
 def Laws.response_body_304():
   {==}
 
+def Laws.response_body_205():
+  {==}
+
+def Laws.write_reset_content():
+  {==}
+
+def Laws.response_not_a_byte():
+  {==}
+
+def Laws.write_head_ok():
+  {==}
+
 def Laws.reader_lengths():
   {==}
 
@@ -556,3 +568,6 @@ def Laws.write_one_length(s, hs, b, r, e, hb):
 
 def Laws.write_splits(s, hs, b, r, e):
   RespProof.r3(s, hs, b, r, e)
+
+def Laws.write_head_one_length(s, hs, b, r, e, hb):
+  RespProof.r2h(s, hs, b, r, e, hb)

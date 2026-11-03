@@ -17,7 +17,7 @@ import ../src/response.bend as Resp
 
 # What response promises when it answers Done
 def Good(r: Resp.Response, +s: U32, +hs: List<&2, Req.Field>, +b: List<&2, U32>) -> Type:
-  {Resp.Response{s, hs, b} == r : Resp.Response} & ({Resp.status_ok(s) == True{} : Bool} & ({Resp.fields_ok(hs) == True{} : Bool} & {Bool.or(Resp.has_body(s), List.is_empty(&2, U32, b)) == True{} : Bool}))
+  {Resp.Response{s, hs, b} == r : Resp.Response} & ({Resp.status_ok(s) == True{} : Bool} & ({Resp.fields_ok(hs) == True{} : Bool} & {Resp.all_bytes(b) == True{} : Bool}))
 
 def Ok(res: Result<&2, &2, Resp.ResponseError, Resp.Response>, +s: U32, +hs: List<&2, Req.Field>, +b: List<&2, U32>) -> Type:
   match res:
@@ -26,12 +26,29 @@ def Ok(res: Result<&2, &2, Resp.ResponseError, Resp.Response>, +s: U32, +hs: Lis
     case Done{r}:
       Good(r, s, hs, b)
 
+law ok_bytes:
+  for k: Bool
+  for +s: U32
+  for +hs: List<&2, Req.Field>
+  for +b: List<&2, U32>
+  for ek: {k == Resp.all_bytes(b) : Bool}
+  for hs1: {Resp.status_ok(s) == True{} : Bool}
+  for hf: {Resp.fields_ok(hs) == True{} : Bool}
+  Ok(Resp.response.bytes(k, s, hs, b), s, hs, b)
+
+def ok_bytes(k, s, hs, b, ek, hs1, hf):
+  match k:
+    case False{}:
+      Unit{}
+    case True{}:
+      ({==}, (hs1, (hf, Equal.sym(Bool, True{}, Resp.all_bytes(b), ek))))
+
 law ok_body:
   for k: Bool
   for +s: U32
   for +hs: List<&2, Req.Field>
   for +b: List<&2, U32>
-  for ek: {k == Bool.or(Resp.has_body(s), List.is_empty(&2, U32, b)) : Bool}
+  for ek: {k == Bool.or(Resp.has_content(s), List.is_empty(&2, U32, b)) : Bool}
   for hs1: {Resp.status_ok(s) == True{} : Bool}
   for hf: {Resp.fields_ok(hs) == True{} : Bool}
   Ok(Resp.response.body(k, s, hs, b), s, hs, b)
@@ -41,7 +58,7 @@ def ok_body(k, s, hs, b, ek, hs1, hf):
     case False{}:
       Unit{}
     case True{}:
-      ({==}, (hs1, (hf, Equal.sym(Bool, True{}, Bool.or(Resp.has_body(s), List.is_empty(&2, U32, b)), ek))))
+      ok_bytes(Resp.all_bytes(b), s, hs, b, {==}, hs1, hf)
 
 law ok_fields:
   for k: Bool
@@ -57,7 +74,7 @@ def ok_fields(k, s, hs, b, ek, hs1):
     case False{}:
       Unit{}
     case True{}:
-      ok_body(Bool.or(Resp.has_body(s), List.is_empty(&2, U32, b)), s, hs, b, {==}, hs1, Equal.sym(Bool, True{}, Resp.fields_ok(hs), ek))
+      ok_body(Bool.or(Resp.has_content(s), List.is_empty(&2, U32, b)), s, hs, b, {==}, hs1, Equal.sym(Bool, True{}, Resp.fields_ok(hs), ek))
 
 law ok_status:
   for k: Bool
@@ -241,8 +258,8 @@ def r1(s, hs, b, r, e):
 # ---- R3: the head ends right before the body ----
 
 # The first CRLF CRLF in x is right before b, so x is h then b
-def Ends(x: List<&2, U32>, b: List<&2, U32>) -> Type:
-  &h: List<&2, U32> -> ({Resp.head_end(x) == Byte.Cut{h, b} : Byte.Cut} & {x == List.append(&2, U32, h, b) : List<&2, U32>})
+def Ends(x: List<&2, U32>, h: List<&2, U32>, b: List<&2, U32>) -> Type:
+  {Resp.head_end(x) == Byte.Cut{h, b} : Byte.Cut} & {x == List.append(&2, U32, h, b) : List<&2, U32>}
 
 # A line safe byte isn't CR
 law not_cr:
@@ -279,92 +296,95 @@ def he_crlf(c, z, e):
 law ends_cons:
   for +c: U32
   for +x: List<&2, U32>
+  for +h: List<&2, U32>
   for +b: List<&2, U32>
   for hc: {Resp.head_end(Con{c, x}) == Byte.cut.cons(c, Resp.head_end(x)) : Byte.Cut}
-  for p: Ends(x, b)
-  Ends(Con{c, x}, b)
+  for p: Ends(x, h, b)
+  Ends(Con{c, x}, Con{c, h}, b)
 
-def ends_cons(c, x, b, hc, p):
-  (h, q) = p
-  (e1, e2) = q
-  (Con{c, h}, (Equal.trans(Byte.Cut, Resp.head_end(Con{c, x}), Byte.cut.cons(c, Resp.head_end(x)), Byte.Cut{Con{c, h}, b}, hc,
+def ends_cons(c, x, h, b, hc, p):
+  (e1, e2) = p
+  (Equal.trans(Byte.Cut, Resp.head_end(Con{c, x}), Byte.cut.cons(c, Resp.head_end(x)), Byte.Cut{Con{c, h}, b}, hc,
       Equal.cong(Byte.Cut, Byte.Cut, y => Byte.cut.cons(c, y), Resp.head_end(x), Byte.Cut{h, b}, e1)),
-    Equal.cong(List<&2, U32>, List<&2, U32>, y => Con{c, y}, x, List.append(&2, U32, h, b), e2)))
+    Equal.cong(List<&2, U32>, List<&2, U32>, y => Con{c, y}, x, List.append(&2, U32, h, b), e2))
 
 # Line safe bytes in front don't move the end of the head
 law he_app:
   for +x: List<&2, U32>
   for +rest: List<&2, U32>
+  for +h: List<&2, U32>
   for +b: List<&2, U32>
   for +hx: {Resp.line_safe(x) == True{} : Bool}
-  for p: Ends(rest, b)
-  Ends(List.append(&2, U32, x, rest), b)
+  for p: Ends(rest, h, b)
+  Ends(List.append(&2, U32, x, rest), List.append(&2, U32, x, h), b)
 
-def he_app(x, rest, b, hx, p):
+def he_app(x, rest, h, b, hx, p):
   match x:
     case Nil{}:
       p
     case Con{+c, +t}:
-      ends_cons(c, List.append(&2, U32, t, rest), b,
+      ends_cons(c, List.append(&2, U32, t, rest), List.append(&2, U32, t, h), b,
         he_skip(c, List.append(&2, U32, t, rest), not_cr(c, Logic.and_left(Resp.is_line_safe(c), Resp.line_safe(t), hx))),
-        he_app(t, rest, b, Logic.and_right(Resp.is_line_safe(c), Resp.line_safe(t), hx), p))
+        he_app(t, rest, h, b, Logic.and_right(Resp.is_line_safe(c), Resp.line_safe(t), hx), p))
 
 # ... nor does a CRLF before a byte that isn't CR
 law ends_crlf:
   for +c: U32
   for +z: List<&2, U32>
+  for +h: List<&2, U32>
   for +b: List<&2, U32>
   for e: {U32.is_eq(c, 13) == False{} : Bool}
-  for p: Ends(Con{c, z}, b)
-  Ends(Con{13, Con{10, Con{c, z}}}, b)
+  for p: Ends(Con{c, z}, h, b)
+  Ends(Con{13, Con{10, Con{c, z}}}, Con{13, Con{10, h}}, b)
 
-def ends_crlf(c, z, b, e, p):
-  (h, q) = p
-  (e1, e2) = q
-  (Con{13, Con{10, h}}, (Equal.trans(Byte.Cut, Resp.head_end(Con{13, Con{10, Con{c, z}}}), Byte.cut.cons(13, Byte.cut.cons(10, Resp.head_end(Con{c, z}))), Byte.Cut{Con{13, Con{10, h}}, b}, he_crlf(c, z, e),
+def ends_crlf(c, z, h, b, e, p):
+  (e1, e2) = p
+  (Equal.trans(Byte.Cut, Resp.head_end(Con{13, Con{10, Con{c, z}}}), Byte.cut.cons(13, Byte.cut.cons(10, Resp.head_end(Con{c, z}))), Byte.Cut{Con{13, Con{10, h}}, b}, he_crlf(c, z, e),
       Equal.cong(Byte.Cut, Byte.Cut, y => Byte.cut.cons(13, Byte.cut.cons(10, y)), Resp.head_end(Con{c, z}), Byte.Cut{h, b}, e1)),
-    Equal.cong(List<&2, U32>, List<&2, U32>, y => Con{13, Con{10, y}}, Con{c, z}, List.append(&2, U32, h, b), e2)))
+    Equal.cong(List<&2, U32>, List<&2, U32>, y => Con{13, Con{10, y}}, Con{c, z}, List.append(&2, U32, h, b), e2))
 
 law ends_field:
   for f: Req.Field
   for +t: List<&2, U32>
+  for +h: List<&2, U32>
   for +b: List<&2, U32>
-  for h: {Resp.field_ok(f) == True{} : Bool}
-  for p: Ends(t, b)
-  Ends(Resp.field_into(f, t), b)
+  for hf0: {Resp.field_ok(f) == True{} : Bool}
+  for p: Ends(t, h, b)
+  Ends(Resp.field_into(f, t), Resp.field_into(f, h), b)
 
-def ends_field(f, t, b, h, p):
+def ends_field(f, t, h, b, hf0, p):
   match f:
     case Req.Field{n, +v}:
       match n:
         case Nil{}:
-          Logic.absurd(Ends(Resp.field_into(Req.Field{Nil{}, v}, t), b), Logic.true_ne_false(h))
+          Logic.absurd(Ends(Resp.field_into(Req.Field{Nil{}, v}, t), Resp.field_into(Req.Field{Nil{}, v}, h), b), Logic.true_ne_false(hf0))
         case Con{+c, +nt}:
-          +hf = h
+          +hf = hf0
           +hn = token_safe(Con{c, nt}, Logic.and_left(Byte.is_token(Con{c, nt}), Bool.and(Fields.all_value_bytes(v), Bool.not(Resp.is_framing(Con{c, nt}))), hf))
           hv = value_safe(v, Logic.and_left(Fields.all_value_bytes(v), Bool.not(Resp.is_framing(Con{c, nt})),
             Logic.and_right(Byte.is_token(Con{c, nt}), Bool.and(Fields.all_value_bytes(v), Bool.not(Resp.is_framing(Con{c, nt}))), hf)))
-          ends_crlf(c, List.append(&2, U32, nt, Con{58, Con{32, List.append(&2, U32, v, t)}}), b,
+          ends_crlf(c, List.append(&2, U32, nt, Con{58, Con{32, List.append(&2, U32, v, t)}}), List.append(&2, U32, Con{c, nt}, Con{58, Con{32, List.append(&2, U32, v, h)}}), b,
             not_cr(c, Logic.and_left(Resp.is_line_safe(c), Resp.line_safe(nt), hn)),
-            he_app(Con{c, nt}, Con{58, Con{32, List.append(&2, U32, v, t)}}, b, hn,
-              he_app([58, 32], List.append(&2, U32, v, t), b, {==},
-                he_app(v, t, b, hv, p))))
+            he_app(Con{c, nt}, Con{58, Con{32, List.append(&2, U32, v, t)}}, Con{58, Con{32, List.append(&2, U32, v, h)}}, b, hn,
+              he_app([58, 32], List.append(&2, U32, v, t), List.append(&2, U32, v, h), b, {==},
+                he_app(v, t, h, b, hv, p))))
 
 law ends_fields:
   for +hs: List<&2, Req.Field>
   for +t: List<&2, U32>
+  for +h: List<&2, U32>
   for +b: List<&2, U32>
-  for +h: {Resp.fields_ok(hs) == True{} : Bool}
-  for p: Ends(t, b)
-  Ends(Resp.fields_into(hs, t), b)
+  for +hf: {Resp.fields_ok(hs) == True{} : Bool}
+  for p: Ends(t, h, b)
+  Ends(Resp.fields_into(hs, t), Resp.fields_into(hs, h), b)
 
-def ends_fields(hs, t, b, h, p):
+def ends_fields(hs, t, h, b, hf, p):
   match hs:
     case Nil{}:
       p
     case Con{+f, +rest}:
-      ends_field(f, Resp.fields_into(rest, t), b, Logic.and_left(Resp.field_ok(f), Resp.fields_ok(rest), h),
-        ends_fields(rest, t, b, Logic.and_right(Resp.field_ok(f), Resp.fields_ok(rest), h), p))
+      ends_field(f, Resp.fields_into(rest, t), Resp.fields_into(rest, h), b, Logic.and_left(Resp.field_ok(f), Resp.fields_ok(rest), hf),
+        ends_fields(rest, t, h, b, Logic.and_right(Resp.field_ok(f), Resp.fields_ok(rest), hf), p))
 
 # The digits of a length are line safe
 law ls_digit:
@@ -420,18 +440,19 @@ law ends_length:
   for has: Bool
   for +b0: List<&2, U32>
   for +t: List<&2, U32>
+  for +h: List<&2, U32>
   for +b: List<&2, U32>
-  for p: Ends(t, b)
-  Ends(Resp.length_into(has, b0, t), b)
+  for p: Ends(t, h, b)
+  Ends(Resp.length_into(has, b0, t), Resp.length_into(has, b0, h), b)
 
-def ends_length(has, b0, t, b, p):
+def ends_length(has, b0, t, h, b, p):
   match has:
     case False{}:
       p
     case True{}:
-      ends_crlf(67, List.append(&2, U32, Path.bytes("ontent-Length: "), List.append(&2, U32, Resp.length_text(b0), t)), b, {==},
-        he_app(Path.bytes("Content-Length: "), List.append(&2, U32, Resp.length_text(b0), t), b, {==},
-          he_app(Resp.length_text(b0), t, b, length_safe(b0), p)))
+      ends_crlf(67, List.append(&2, U32, Path.bytes("ontent-Length: "), List.append(&2, U32, Resp.length_text(b0), t)), List.append(&2, U32, Path.bytes("Content-Length: "), List.append(&2, U32, Resp.length_text(b0), h)), b, {==},
+        he_app(Path.bytes("Content-Length: "), List.append(&2, U32, Resp.length_text(b0), t), List.append(&2, U32, Resp.length_text(b0), h), b, {==},
+          he_app(Resp.length_text(b0), t, h, b, length_safe(b0), p)))
 
 # Every reason phrase is line safe
 def phrases_safe(tbl: List<&2, Resp.Phrase>) -> Bool:
@@ -507,14 +528,15 @@ law ends_write:
   for +s: U32
   for +hs: List<&2, Req.Field>
   for +b: List<&2, U32>
-  for h: {Resp.fields_ok(hs) == True{} : Bool}
-  Ends(Resp.write(Resp.Response{s, hs, b}), b)
+  for +h: {Resp.fields_ok(hs) == True{} : Bool}
+  Ends(Resp.write(Resp.Response{s, hs, b}), Resp.write_head(Resp.Response{s, hs, b}), b)
 
 def ends_write(s, hs, b, h):
-  he_app(Resp.status_line(s), Resp.fields_into(hs, Resp.length_into(Resp.has_body(s), b, Con{13, Con{10, Con{13, Con{10, b}}}})), b, status_safe(s),
-    ends_fields(hs, Resp.length_into(Resp.has_body(s), b, Con{13, Con{10, Con{13, Con{10, b}}}}), b, h,
-      ends_length(Resp.has_body(s), b, Con{13, Con{10, Con{13, Con{10, b}}}}, b,
-        ([13, 10, 13, 10], ({==}, {==})))))
+  +nil = {Nil{} : List<&2, U32>}
+  he_app(Resp.status_line(s), Resp.fields_into(hs, Resp.length_into(Resp.has_length(s), b, Con{13, Con{10, Con{13, Con{10, b}}}})), Resp.fields_into(hs, Resp.length_into(Resp.has_length(s), b, Con{13, Con{10, Con{13, Con{10, nil}}}})), b, status_safe(s),
+    ends_fields(hs, Resp.length_into(Resp.has_length(s), b, Con{13, Con{10, Con{13, Con{10, b}}}}), Resp.length_into(Resp.has_length(s), b, Con{13, Con{10, Con{13, Con{10, nil}}}}), b, h,
+      ends_length(Resp.has_length(s), b, Con{13, Con{10, Con{13, Con{10, b}}}}, Con{13, Con{10, Con{13, Con{10, nil}}}}, b,
+        ({==}, {==}))))
 
 law r3_of:
   for +s: U32
@@ -522,13 +544,13 @@ law r3_of:
   for +b: List<&2, U32>
   for +r: Resp.Response
   for g: Good(r, s, hs, b)
-  Ends(Resp.write(r), b)
+  Ends(Resp.write(r), Resp.write_head(r), b)
 
 def r3_of(s, hs, b, r, g):
   (er, rest) = g
   (hst, rest2) = rest
   (hf, hb) = rest2
-  %er : Ends(Resp.write(_), b)
+  %er : Ends(Resp.write(_), Resp.write_head(_), b)
   ends_write(s, hs, b, hf)
 
 # R3
@@ -538,7 +560,7 @@ law r3:
   for +b: List<&2, U32>
   for +r: Resp.Response
   for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
-  Ends(Resp.write(r), b)
+  Ends(Resp.write(r), Resp.write_head(r), b)
 
 def r3(s, hs, b, r, e):
   r3_of(s, hs, b, r, good(s, hs, b, r, e))
@@ -1007,25 +1029,26 @@ def l_cl(b, e):
     l_line(67, List.append(&2, U32, Path.bytes("ontent-Length: "), lt), Con{10, Con{13, Con{10, e}}}, safe_no_cr(cl_line(b), he_safe_app(Path.bytes("Content-Length: "), lt, {==}, length_safe(b)))),
     {==})
 
-law r2_write:
+law r2_into:
   for +s: U32
   for +hs: List<&2, Req.Field>
   for +b: List<&2, U32>
+  for +t: List<&2, U32>
   for +hf: {Resp.fields_ok(hs) == True{} : Bool}
-  for hb: {Resp.has_body(s) == True{} : Bool}
-  {Resp.content_lengths(Resp.write(Resp.Response{s, hs, b})) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
+  for hb: {Resp.has_length(s) == True{} : Bool}
+  {Resp.content_lengths(Resp.head_into(s, hs, b, t)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
 
-def r2_write(s, hs, b, hf, hb):
+def r2_into(s, hs, b, t, hf, hb):
   +st = Resp.status_line(s)
-  +c = {Con{13, Con{10, Con{13, Con{10, b}}}} : List<&2, U32>}
+  +c = {Con{13, Con{10, Con{13, Con{10, t}}}} : List<&2, U32>}
   +z = {Con{10, List.append(&2, U32, Path.bytes("Content-Length: "), List.append(&2, U32, Resp.length_text(b), c))} : List<&2, U32>}
   +ff = Resp.fields_into(hs, Con{13, z})
   +want = {[Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
-  %Equal.sym(Bool, Resp.has_body(s), True{}, hb) : {Resp.content_lengths(List.append(&2, U32, st, Resp.fields_into(hs, Resp.length_into(_, b, c)))) == want : List<&2, Maybe<&2, Nat>>}
+  %Equal.sym(Bool, Resp.has_length(s), True{}, hb) : {Resp.content_lengths(List.append(&2, U32, st, Resp.fields_into(hs, Resp.length_into(_, b, c)))) == want : List<&2, Maybe<&2, Nat>>}
   %Equal.sym(List<&2, U32>, ff, Con{13, after_cr(ff)}, starts13(hs, z)) : {Resp.content_lengths(List.append(&2, U32, st, _)) == want : List<&2, Maybe<&2, Nat>>}
   %Equal.sym(List<&2, List<&2, U32>>, Byte.split_on(List.append(&2, U32, st, Con{13, after_cr(ff)}), 13), Con{st, Byte.split_on(after_cr(ff), 13)}, sp(st, after_cr(ff), safe_no_cr(st, status_safe(s)))) : {Resp.content_lengths.go(_) == want : List<&2, Maybe<&2, Nat>>}
   %Equal.sym(List<&2, List<&2, U32>>, Resp.field_lines(Byte.split_on(after_cr(ff), 13)), List.append(&2, List<&2, U32>, texts(hs), Resp.field_lines(Byte.split_on(z, 13))), l_fields(hs, z, hf)) : {Resp.length_values(_) == want : List<&2, Maybe<&2, Nat>>}
-  %Equal.sym(List<&2, List<&2, U32>>, Resp.field_lines(Byte.split_on(z, 13)), [cl_line(b)], l_cl(b, b)) : {Resp.length_values(List.append(&2, List<&2, U32>, texts(hs), _)) == want : List<&2, Maybe<&2, Nat>>}
+  %Equal.sym(List<&2, List<&2, U32>>, Resp.field_lines(Byte.split_on(z, 13)), [cl_line(b)], l_cl(b, t)) : {Resp.length_values(List.append(&2, List<&2, U32>, texts(hs), _)) == want : List<&2, Maybe<&2, Nat>>}
   %Equal.sym(List<&2, Maybe<&2, Nat>>, Resp.length_values(List.append(&2, List<&2, U32>, texts(hs), [cl_line(b)])), Resp.length_values([cl_line(b)]), lv_skip(hs, [cl_line(b)], hf)) : {_ == want : List<&2, Maybe<&2, Nat>>}
   Equal.cong(Maybe<&2, Nat>, List<&2, Maybe<&2, Nat>>, y => [y], Resp.decimal(Fields.trim(Con{32, Resp.length_text(b)})), Some{List.length(&2, U32, b)}, read_length(b))
 
@@ -1035,7 +1058,7 @@ law r2_of:
   for +b: List<&2, U32>
   for +r: Resp.Response
   for g: Good(r, s, hs, b)
-  for hb: {Resp.has_body(s) == True{} : Bool}
+  for hb: {Resp.has_length(s) == True{} : Bool}
   {Resp.content_lengths(Resp.write(r)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
 
 def r2_of(s, hs, b, r, g, hb):
@@ -1043,7 +1066,7 @@ def r2_of(s, hs, b, r, g, hb):
   (hst, rest2) = rest
   (hf, hbo) = rest2
   %er : {Resp.content_lengths(Resp.write(_)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
-  r2_write(s, hs, b, hf, hb)
+  r2_into(s, hs, b, b, hf, hb)
 
 # R2
 law r2:
@@ -1052,8 +1075,37 @@ law r2:
   for +b: List<&2, U32>
   for +r: Resp.Response
   for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
-  for hb: {Resp.has_body(s) == True{} : Bool}
+  for hb: {Resp.has_length(s) == True{} : Bool}
   {Resp.content_lengths(Resp.write(r)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
 
 def r2(s, hs, b, r, e, hb):
   r2_of(s, hs, b, r, good(s, hs, b, r, e), hb)
+
+law r2h_of:
+  for +s: U32
+  for +hs: List<&2, Req.Field>
+  for +b: List<&2, U32>
+  for +r: Resp.Response
+  for g: Good(r, s, hs, b)
+  for hb: {Resp.has_length(s) == True{} : Bool}
+  {Resp.content_lengths(Resp.write_head(r)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
+
+def r2h_of(s, hs, b, r, g, hb):
+  (er, rest) = g
+  (hst, rest2) = rest
+  (hf, hbo) = rest2
+  %er : {Resp.content_lengths(Resp.write_head(_)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
+  r2_into(s, hs, b, Nil{}, hf, hb)
+
+# R2 for write_head
+law r2h:
+  for +s: U32
+  for +hs: List<&2, Req.Field>
+  for +b: List<&2, U32>
+  for +r: Resp.Response
+  for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+  for hb: {Resp.has_length(s) == True{} : Bool}
+  {Resp.content_lengths(Resp.write_head(r)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
+
+def r2h(s, hs, b, r, e, hb):
+  r2h_of(s, hs, b, r, good(s, hs, b, r, e), hb)

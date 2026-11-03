@@ -40,11 +40,15 @@ def parse(limits: Limits.Limits, input: List<&2, U32>) -> Parse.Outcome:
 
 # Check the parts of a response: status 100-599, field names that are
 # tokens, values with no CR, LF or NUL, no Content-Length or
-# Transfer-Encoding (write adds Content-Length), and no body on 1xx, 204 or
-# 304
+# Transfer-Encoding (write adds Content-Length), no body on 1xx, 204, 205
+# or 304, and a body of bytes
 def response(s: U32, headers: List<&2, Req.Field>, body: List<&2, U32>) -> Result<&2, &2, Resp.ResponseError, Resp.Response>:
   Resp.response(s, headers, body)
 
 # The bytes to send for a response
 def write(r: Resp.Response) -> List<&2, U32>:
   Resp.write(r)
+
+# The head write would send, without the body: the answer to a HEAD request
+def write_head(r: Resp.Response) -> List<&2, U32>:
+  Resp.write_head(r)
