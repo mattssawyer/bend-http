@@ -15,6 +15,7 @@ import ./proof/clean.bend as CleanProof
 import ./proof/method.bend as MethodProof
 import ./proof/bound.bend as BoundProof
 import ./src/host.bend as Host
+import ./proof/response.bend as RespProof
 
 
 def Laws.line_root():
@@ -483,3 +484,75 @@ def Laws.framing_ignores_method(l, m1, m2, t, v, fs, rest):
 def Laws.bounded(l, i, hl):
   BoundProof.nm_false(Parse.parse(l, i), i, l, BoundProof.pb_parse(l, i), hl)
 
+
+def Laws.write_ok():
+  {==}
+
+def Laws.write_fields():
+  {==}
+
+def Laws.write_no_content():
+  {==}
+
+def Laws.write_unknown_code():
+  {==}
+
+def Laws.write_length_ten():
+  {==}
+
+def Laws.write_continue():
+  {==}
+
+def Laws.response_ok():
+  {==}
+
+def Laws.response_status_low():
+  {==}
+
+def Laws.response_status_high():
+  {==}
+
+def Laws.response_name_space():
+  {==}
+
+def Laws.response_name_empty():
+  {==}
+
+def Laws.response_value_crlf():
+  {==}
+
+def Laws.response_value_nul():
+  {==}
+
+def Laws.response_own_length():
+  {==}
+
+def Laws.response_own_te():
+  {==}
+
+def Laws.response_body_204():
+  {==}
+
+def Laws.response_body_304():
+  {==}
+
+def Laws.reader_lengths():
+  {==}
+
+def Laws.reader_head_end():
+  {==}
+
+def Laws.reader_line_safe():
+  {==}
+
+def Laws.reader_stray_cr():
+  {==}
+
+def Laws.response_values_safe(s, hs, b, r, e):
+  RespProof.r1(s, hs, b, r, e)
+
+def Laws.write_one_length(s, hs, b, r, e, hb):
+  RespProof.r2(s, hs, b, r, e, hb)
+
+def Laws.write_splits(s, hs, b, r, e):
+  RespProof.r3(s, hs, b, r, e)

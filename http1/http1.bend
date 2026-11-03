@@ -1,10 +1,11 @@
-# An HTTP/1.1 request parser that works on bytes.
+# An HTTP/1.1 request parser and response writer that work on bytes.
 # Author: Matthew Sawyer
-# Last Updated: 2026-10-30
+# Last Updated: 2026-11-03
 # Version: 1.0.0
 #
 # The pieces are in src/. The types are in src/request.bend, the outcome in
-# src/parse.bend and the rejection reasons in src/reason.bend.
+# src/parse.bend, the rejection reasons in src/reason.bend and responses in
+# src/response.bend.
 
 import Base
 import ./src/reason.bend as Reason
@@ -13,6 +14,7 @@ import ./src/request_line.bend as Line
 import ./src/limits.bend as Limits
 import ./src/head.bend as Head
 import ./src/parse.bend as Parse
+import ./src/response.bend as Resp
 
 
 # Parse a request line, without its CRLF: "GET /a?x HTTP/1.1"
@@ -35,3 +37,14 @@ def head(limits: Limits.Limits, input: List<&2, U32>) -> Head.HeadResult:
 # been used yet. After Parsed, call parse again on the leftover.
 def parse(limits: Limits.Limits, input: List<&2, U32>) -> Parse.Outcome:
   Parse.parse(limits, input)
+
+# Check the parts of a response: status 100-599, field names that are
+# tokens, values with no CR, LF or NUL, no Content-Length or
+# Transfer-Encoding (write adds Content-Length), and no body on 1xx, 204 or
+# 304
+def response(s: U32, headers: List<&2, Req.Field>, body: List<&2, U32>) -> Result<&2, &2, Resp.ResponseError, Resp.Response>:
+  Resp.response(s, headers, body)
+
+# The bytes to send for a response
+def write(r: Resp.Response) -> List<&2, U32>:
+  Resp.write(r)
