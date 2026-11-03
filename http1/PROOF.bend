@@ -10,6 +10,11 @@ import ./proof/framing.bend as FrameProof
 import ./proof/suffix.bend as SufProof
 import ./proof/host.bend as HostProof
 import ./proof/target.bend as TargetProof
+import ./proof/stable.bend as StableProof
+import ./proof/clean.bend as CleanProof
+import ./proof/method.bend as MethodProof
+import ./proof/bound.bend as BoundProof
+import ./src/host.bend as Host
 
 
 def Laws.line_root():
@@ -456,4 +461,22 @@ def Laws.expect_http10():
 
 def Laws.need_more_plain():
   {==}
+
+def Laws.more_input_keeps_parsed(l, i, r, rest, more, e):
+  %e : StableProof.OSt(_, Parse.parse(l, List.append(&2, U32, i, more)), more)
+  StableProof.st_parse(l, i, more)
+
+def Laws.more_input_keeps_rejected(l, i, x, more, e):
+  %e : StableProof.OSt(_, Parse.parse(l, List.append(&2, U32, i, more)), more)
+  StableProof.st_parse(l, i, more)
+
+def Laws.no_bare_cr_lf_in_head(l, i, rl, fs, rest, e):
+  %e : CleanProof.HS7(_, i)
+  CleanProof.hs7_head(l, i)
+
+def Laws.framing_ignores_method(l, m1, m2, t, v, fs, rest):
+  MethodProof.mb_checks(Host.checks(v, t, fs), m1, m2, t, v, fs, rest, l)
+
+def Laws.bounded(l, i, hl):
+  BoundProof.nm_false(Parse.parse(l, i), i, l, BoundProof.pb_parse(l, i), hl)
 

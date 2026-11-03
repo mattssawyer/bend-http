@@ -31,10 +31,6 @@ def size(l: List<&2, U32>) -> U32:
     case Con{h, t}:
         U32.inc(size(t))
 
-# The line length plus its CRLF
-def line_size(l: List<&2, U32>) -> U32:
-  U32.add(size(l), 2)
-
 def minus.if(fits: Bool, +a: U32, +b: U32) -> U32:
   match fits:
     case True{}:
@@ -92,10 +88,11 @@ def head.field(scan: Lines.LineScan, +sec: U32, first: Bool, rl: Req.RequestLine
           case Nil{}:
               HeadParsed{rl, Nil{}, rest}
           case Con{+c, +t}:
-              head.field2(Fields.field_line(Con{c, t}, first), rest, minus(sec, line_size(Con{c, t})), k)
+              head.field2(Fields.field_line(Con{c, t}, first), rest, minus(minus(sec, 2), size(Con{c, t})), k)
 
 # Read field lines. fuel is how many more are allowed, sec how many bytes
-# of the header section are left, fl the limit for one line.
+# of the header section are left (each line counts its CRLF), fl the limit
+# for one line.
 def head.fields(fuel: Nat, input: List<&2, U32>, +sec: U32, +fl: U32, first: Bool, +rl: Req.RequestLine) -> HeadResult:
   match fuel:
     case 0n:
@@ -116,7 +113,7 @@ def head.line(r: Result<&2, &2, Reason.Reason, Req.RequestLine>, +l: List<&2, U3
     case Fail{e}:
         HeadRejected{e}
     case Done{rl}:
-        head.section(U32.is_le(line_size(l), sec), rl, rest, minus(sec, line_size(l)), fl, nf)
+        head.section(U32.is_le(2, sec) && U32.is_le(size(l), minus(sec, 2)), rl, rest, minus(minus(sec, 2), size(l)), fl, nf)
 
 # The request line. empty says what to do with an empty line instead.
 def head.request(scan: Lines.LineScan, empty: HeadResult, sec: U32, fl: U32, nf: Nat) -> HeadResult:

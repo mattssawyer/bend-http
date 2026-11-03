@@ -383,8 +383,8 @@ def h8_field(scan, sec, first, rl, k, hr, ih):
         case Nil{}:
           hr
         case Con{+c, +t}:
-          h8_field2(Fields.field_line(Con{c, t}, first), rest, Head.minus(sec, Head.line_size(Con{c, t})), k,
-            ih(rest)(Head.minus(sec, Head.line_size(Con{c, t})))(hr))
+          h8_field2(Fields.field_line(Con{c, t}, first), rest, Head.minus(Head.minus(sec, 2), Head.size(Con{c, t})), k,
+            ih(rest)(Head.minus(Head.minus(sec, 2), Head.size(Con{c, t})))(hr))
 
 law h8_last:
   for scan: Lines.LineScan
@@ -462,7 +462,7 @@ def h8_line(r, l, rest, sec, fl, nf, hr):
     case Fail{e}:
       Unit{}
     case Done{+rl}:
-      h8_section(U32.is_le(Head.line_size(l), sec), rl, rest, Head.minus(sec, Head.line_size(l)), fl, nf, hr)
+      h8_section(Bool.and(U32.is_le(2, sec), U32.is_le(Head.size(l), Head.minus(sec, 2))), rl, rest, Head.minus(Head.minus(sec, 2), Head.size(l)), fl, nf, hr)
 
 law h8_request:
   for scan: Lines.LineScan

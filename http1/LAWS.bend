@@ -9,6 +9,7 @@ import ./src/head.bend as Head
 import ./src/framing.bend as Framing
 import ./src/parse.bend as Parse
 import ./src/host.bend as Host
+import ./src/lines.bend as Lines
 
 
 # Request line examples (the line without its CRLF)
@@ -667,3 +668,54 @@ law absolute_path_from_urlpath:
     for e: {Parse.parse(l, i) == Parse.Parsed{Req.Request{m, Req.Absolute{s, a, p, q}, v, hs, body}, rest} : Parse.Outcome}
     exs raw: List<&2, U32>
     {Path.parse(raw) == Done{p} : Result<&2, &2, PathError.PathError, List<&2, List<&2, U32>>>}
+
+# H2: once a request is Parsed, more input only adds to the leftover
+law more_input_keeps_parsed:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for r: Req.Request
+    for rest: List<&2, U32>
+    for +more: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Parsed{r, rest} : Parse.Outcome}
+    {Parse.parse(l, List.append(&2, U32, i, more)) == Parse.Parsed{r, List.append(&2, U32, rest, more)} : Parse.Outcome}
+
+# H3: once a request is Rejected, more input can't change that
+law more_input_keeps_rejected:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for x: Reason.Reason
+    for +more: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Rejected{x} : Parse.Outcome}
+    {Parse.parse(l, List.append(&2, U32, i, more)) == Parse.Rejected{x} : Parse.Outcome}
+
+# H7: the head of a request is clean: every CR is followed by LF, and every
+# LF has a CR before it. used is the head: the bytes before rest.
+law no_bare_cr_lf_in_head:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for rl: Req.RequestLine
+    for fs: List<&2, Req.Field>
+    for rest: List<&2, U32>
+    for e: {Head.head(l, i) == Head.HeadParsed{rl, fs, rest} : Head.HeadResult}
+    exs used: List<&2, U32>
+    {i == List.append(&2, U32, used, rest) : List<&2, U32>} & {Lines.crlf_clean(used) == True{} : Bool}
+
+# H10: given the same head except for the method, parse ends the request in
+# the same place with the same outcome; only the method in it differs
+law framing_ignores_method:
+    for +l: Limits.Limits
+    for +m1: List<&2, U32>
+    for +m2: List<&2, U32>
+    for +t: Req.Target
+    for +v: Req.Version
+    for +fs: List<&2, Req.Field>
+    for +rest: List<&2, U32>
+    {Parse.parse.head(Head.HeadParsed{Req.RequestLine{m1, t, v}, fs, rest}, l) == Parse.with_method(Parse.parse.head(Head.HeadParsed{Req.RequestLine{m2, t, v}, fs, rest}, l), m1) : Parse.Outcome}
+
+# H9: the parser never waits forever. With more input than the largest
+# request the limits allow (Parse.max_request), the answer is never NeedMore.
+law bounded:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for hl: {Nat.is_lt(Parse.max_request(l), List.length(&2, U32, i)) == True{} : Bool}
+    {Parse.is_need_more(Parse.parse(l, i)) == False{} : Bool}

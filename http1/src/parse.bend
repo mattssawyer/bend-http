@@ -73,3 +73,39 @@ def parse.head(h: Head.HeadResult, +limits: Limits.Limits) -> Outcome:
 # leftover for the next request.
 def parse(+limits: Limits.Limits, input: List<&2, U32>) -> Outcome:
   parse.head(Head.head(limits, input), limits)
+
+# The outcome with the method of a Parsed request replaced by m (law H10)
+def with_method(o: Outcome, m: List<&2, U32>) -> Outcome:
+  match o:
+    case Parsed{rq, left}:
+        match rq:
+          case Req.Request{x, t, v, hs, b}:
+              Parsed{Req.Request{m, t, v, hs, b}, left}
+    case other:
+        other
+
+
+# ---- The largest request the limits allow (law H9) ----
+
+# The most bytes a chunked body can take, when d bytes of body are still
+# allowed: each data byte can bring at most one size line (size_budget
+# bytes), two CRLFs and itself; then the last chunk and the trailers.
+def chunk_bound(+l: Limits.Limits, d: Nat) -> Nat:
+  match d:
+    case 0n:
+        Nat.add(U32.to_nat(Chunked.size_budget(l)), 1n+1n+1n+U32.to_nat(Limits.header_section(l)))
+    case 1n+p:
+        Nat.add(1n+1n+1n+1n+1n+U32.to_nat(Chunked.size_budget(l)), chunk_bound(l, p))
+
+# The most bytes one request can use: the head (with one empty line before
+# it), then the largest body
+def max_request(+l: Limits.Limits) -> Nat:
+  Nat.add(1n+1n+1n+Nat.add(U32.to_nat(Limits.request_line(l)), U32.to_nat(Limits.header_section(l))),
+    1n+1n+Nat.add(U32.to_nat(Limits.header_section(l)), 1n+1n+Nat.add(U32.to_nat(Limits.body(l)), chunk_bound(l, U32.to_nat(Limits.body(l))))))
+
+def is_need_more(o: Outcome) -> Bool:
+  match o:
+    case NeedMore{c}:
+        True{}
+    case other:
+        False{}

@@ -293,8 +293,8 @@ def hs_field(scan, b, sec, first, rl, k, hl, ih):
         case Nil{}:
           suf_line(b, Nil{}, rest, hl)
         case Con{+c, +t}:
-          hs_field2(Fields.field_line(Con{c, t}, first), b, rest, Head.minus(sec, Head.line_size(Con{c, t})), k,
-            suf_line(b, Con{c, t}, rest, hl), ih(rest)(Head.minus(sec, Head.line_size(Con{c, t}))))
+          hs_field2(Fields.field_line(Con{c, t}, first), b, rest, Head.minus(Head.minus(sec, 2), Head.size(Con{c, t})), k,
+            suf_line(b, Con{c, t}, rest, hl), ih(rest)(Head.minus(Head.minus(sec, 2), Head.size(Con{c, t}))))
 
 law hs_last:
   for scan: Lines.LineScan
@@ -371,7 +371,7 @@ def hs_line(r, l, rest, sec, fl, nf):
     case Fail{e}:
       Unit{}
     case Done{+rl}:
-      hs_section(U32.is_le(Head.line_size(l), sec), rl, rest, Head.minus(sec, Head.line_size(l)), fl, nf)
+      hs_section(Bool.and(U32.is_le(2, sec), U32.is_le(Head.size(l), Head.minus(sec, 2))), rl, rest, Head.minus(Head.minus(sec, 2), Head.size(l)), fl, nf)
 
 law hs_request:
   for scan: Lines.LineScan

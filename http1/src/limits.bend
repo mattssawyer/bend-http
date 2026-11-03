@@ -25,3 +25,13 @@ def chunk_ext(l: Limits) -> U32:
   match l:
     case Limits{a, b, c, d, e, f}:
         f
+
+def request_line(l: Limits) -> U32:
+  match l:
+    case Limits{a, b, c, d, e, f}:
+        a
+
+def header_section(l: Limits) -> U32:
+  match l:
+    case Limits{a, b, c, d, e, f}:
+        c
