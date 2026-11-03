@@ -8,6 +8,8 @@ import ./src/limits.bend as Limits
 import ./src/head.bend as Head
 import ./src/framing.bend as Framing
 import ./src/parse.bend as Parse
+import ./src/host.bend as Host
+import ./src/lines.bend as Lines
 
 
 # Request line examples (the line without its CRLF)
@@ -257,27 +259,27 @@ law head_section:
 
 # The body is exactly Content-Length bytes; the rest is the next request
 law parse_cl:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhelloGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Content-Length"), Path.bytes("5")}], Path.bytes("hello")}, Path.bytes("GET")} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5\r\n\r\nhelloGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Content-Length"), Path.bytes("5")}], Path.bytes("hello")}, Path.bytes("GET")} : Parse.Outcome}
 
 # Fewer body bytes than declared: wait for more
 law parse_cl_short:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhel")) == Parse.NeedMore{False{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5\r\n\r\nhel")) == Parse.NeedMore{False{}} : Parse.Outcome}
 
 # No framing fields: an empty body, whatever the method
 law parse_no_framing:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\n\r\nGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [], []}, Path.bytes("GET")} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\n\r\nGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}], []}, Path.bytes("GET")} : Parse.Outcome}
 
 # Content-Length: 0
 law parse_cl_zero:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\nX")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Content-Length"), Path.bytes("0")}], []}, Path.bytes("X")} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0\r\n\r\nX")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Content-Length"), Path.bytes("0")}], []}, Path.bytes("X")} : Parse.Outcome}
 
 # Field names match in any case, and a GET can have a body
 law parse_cl_any_case:
-    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nCONTENT-LENGTH: 2\r\n\r\nab")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("CONTENT-LENGTH"), Path.bytes("2")}], Path.bytes("ab")}, []} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a\r\nCONTENT-LENGTH: 2\r\n\r\nab")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("CONTENT-LENGTH"), Path.bytes("2")}], Path.bytes("ab")}, []} : Parse.Outcome}
 
 # Both framing fields (CL.TE / TE.CL smuggling)
 law parse_cl_te:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n")) == Parse.Rejected{Reason.ContentLengthWithTransferEncoding{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n")) == Parse.Rejected{Reason.ContentLengthWithTransferEncoding{}} : Parse.Outcome}
 
 # Transfer-Encoding in HTTP/1.0
 law parse_te_http10:
@@ -285,44 +287,311 @@ law parse_te_http10:
 
 # Two Content-Length lines, even identical
 law parse_two_cl:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5\r\ncontent-length: 5\r\n\r\nhello")) == Parse.Rejected{Reason.MultipleContentLength{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5\r\ncontent-length: 5\r\n\r\nhello")) == Parse.Rejected{Reason.MultipleContentLength{}} : Parse.Outcome}
 
 # A list of values
 law parse_cl_list:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5, 5\r\n\r\nhello")) == Parse.Rejected{Reason.MultipleContentLength{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5, 5\r\n\r\nhello")) == Parse.Rejected{Reason.MultipleContentLength{}} : Parse.Outcome}
 
 # An empty value
 law parse_cl_empty:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: \r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: \r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
 
 # A sign
 law parse_cl_plus:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: +5\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: +5\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
 
 # Hex
 law parse_cl_hex:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 0x10\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0x10\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
 
 # A space inside the value
 law parse_cl_space:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 5 5\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5 5\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
 
 # A leading zero (some servers read 0200 as octal)
 law parse_cl_leading_zero:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 0200\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0200\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
 
 # More than 10 digits
 law parse_cl_eleven_digits:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 99999999999\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 99999999999\r\n\r\n")) == Parse.Rejected{Reason.InvalidContentLength{}} : Parse.Outcome}
 
 # Too big for a U32
 law parse_cl_overflow:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 4294967296\r\n\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 4294967296\r\n\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
 
 # Over the body limit
 law parse_cl_too_large:
-    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nContent-Length: 2000000\r\n\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 2000000\r\n\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
 
+
+# Chunked bodies
+
+# One chunk, then the last chunk; what follows is the next request
+law chunked_simple:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\nGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, Path.bytes("GET")} : Parse.Outcome}
+
+# A huge extension limit can't wrap the size-line budget round to zero
+law chunked_huge_ext_limit:
+    {Parse.parse(Limits.Limits{8192, 8192, 65536, 100, 1048576, 4294967264}, Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], []}, []} : Parse.Outcome}
+
+# The chunks are joined
+law chunked_two:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhe\r\n3\r\nllo\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# Part of a chunk: wait for more
+law chunked_partial_data:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel")) == Parse.NeedMore{False{}} : Parse.Outcome}
+
+# Half of the CRLF after the data
+law chunked_partial_crlf:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r")) == Parse.NeedMore{False{}} : Parse.Outcome}
+
+# No last chunk yet
+law chunked_no_last:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n")) == Parse.NeedMore{False{}} : Parse.Outcome}
+
+# Trailers are checked, then dropped
+law chunked_trailer:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-T: 1\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# Leading zeros are fine, also in the last chunk
+law chunked_leading_zeros:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0005\r\nhello\r\n000\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# Sizes are hex, either case
+law chunked_hex:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\nA\r\n0123456789\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("0123456789")}, []} : Parse.Outcome}
+
+# "0x" is not part of the size
+law chunked_0x:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0x5\r\nhello\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# A sign
+law chunked_plus:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n+5\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# A space before the size
+law chunked_space_before:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n\u{20}5\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# A space after the size
+law chunked_space_after:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5 \r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# No size
+law chunked_empty_size:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# More than 8 significant hex digits
+law chunked_overflow:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\nffffffffffffffff0000000000000005\r\n")) == Parse.Rejected{Reason.InvalidChunkSize{}} : Parse.Outcome}
+
+# A chunk over the body limit
+law chunked_too_large:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n200000\r\n")) == Parse.Rejected{Reason.ContentTooLarge{}} : Parse.Outcome}
+
+# A bare LF in a size line
+law chunked_bare_lf_ext:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n2;\nxx\r\n")) == Parse.Rejected{Reason.BareLF{}} : Parse.Outcome}
+
+# A bare CR in a size line
+law chunked_bare_cr:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n2\r\r;a")) == Parse.Rejected{Reason.BareCR{}} : Parse.Outcome}
+
+# A size line ended by LF alone
+law chunked_lf_size:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n2\nxx\r\n")) == Parse.Rejected{Reason.BareLF{}} : Parse.Outcome}
+
+# Extensions, with a quoted value, are parsed and dropped
+law chunked_ext_ok:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5;a=b;c=\"q\\\"x\"\r\nhello\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# Spaces after ";" and around "=" are allowed
+law chunked_ext_spaces:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5; a = b\r\nhello\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}
+
+# An empty extension
+law chunked_ext_empty:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5;\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# An extension with no name
+law chunked_ext_no_name:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5;=x\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# An unterminated quoted value
+law chunked_ext_unterminated:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5;a=\"x\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# A space inside a token value
+law chunked_ext_space_value:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5;a=b c\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# A space before ";"
+law chunked_ext_space_before:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5 ;a\r\nhello\r\n")) == Parse.Rejected{Reason.InvalidChunkExtension{}} : Parse.Outcome}
+
+# More data than the size
+law chunked_spill:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nAAAAAXX\r\n")) == Parse.Rejected{Reason.MissingChunkDataCRLF{}} : Parse.Outcome}
+
+# A CR after the data, but not CRLF
+law chunked_spill_cr:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nAAAAA\rX2\r\n")) == Parse.Rejected{Reason.MissingChunkDataCRLF{}} : Parse.Outcome}
+
+# Trailers go through the header field checks
+law chunked_bad_trailer:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n bad\r\n\r\n")) == Parse.Rejected{Reason.ObsFold{}} : Parse.Outcome}
+
+
+# Transfer-Encoding values
+
+# "chunked" in any case
+law te_upper:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: CHUNKED\r\n\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("CHUNKED")}], []}, []} : Parse.Outcome}
+
+# Other codings before chunked
+law te_gzip_chunked:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: gzip, chunked\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.UnsupportedTransferCoding{}} : Parse.Outcome}
+
+# "identity"
+law te_identity:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: identity\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.UnsupportedTransferCoding{}} : Parse.Outcome}
+
+# chunked must come last
+law te_not_final:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked, gzip\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.ChunkedNotFinal{}} : Parse.Outcome}
+
+# An unknown coding
+law te_unknown:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: x\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.ChunkedNotFinal{}} : Parse.Outcome}
+
+# Not quite "chunked"
+law te_obfuscated:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: xchunked\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.ChunkedNotFinal{}} : Parse.Outcome}
+
+# chunked twice
+law te_twice:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked, chunked\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.ChunkedAppliedTwice{}} : Parse.Outcome}
+
+# Parameters on chunked
+law te_params:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked;a=b\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidTransferEncoding{}} : Parse.Outcome}
+
+# An empty value
+law te_empty:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: \r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidTransferEncoding{}} : Parse.Outcome}
+
+# An empty list member (stricter than the RFC)
+law te_leading_comma:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: ,chunked\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidTransferEncoding{}} : Parse.Outcome}
+
+# An empty list member at the end
+law te_trailing_comma:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked,\r\n\r\n0\r\n\r\n")) == Parse.Rejected{Reason.InvalidTransferEncoding{}} : Parse.Outcome}
+
+# Two Transfer-Encoding lines
+law te_two_lines:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n")) == Parse.Rejected{Reason.ChunkedAppliedTwice{}} : Parse.Outcome}
+
+# Host and Expect
+
+# One Host
+law host_ok:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}], []}, []} : Parse.Outcome}
+
+# HTTP/1.1 needs a Host
+law host_missing:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\n\r\n")) == Parse.Rejected{Reason.MissingHost{}} : Parse.Outcome}
+
+# HTTP/1.0 doesn't
+law host_http10:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http10{}, [], []}, []} : Parse.Outcome}
+
+# Two Host lines
+law host_two:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n")) == Parse.Rejected{Reason.DuplicateHost{}} : Parse.Outcome}
+
+# A list of hosts
+law host_list:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a, b\r\n\r\n")) == Parse.Rejected{Reason.DuplicateHost{}} : Parse.Outcome}
+
+# A "/" in the host
+law host_slash:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a/b\r\n\r\n")) == Parse.Rejected{Reason.InvalidHost{}} : Parse.Outcome}
+
+# "user@"
+law host_userinfo:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: user@a\r\n\r\n")) == Parse.Rejected{Reason.InvalidHost{}} : Parse.Outcome}
+
+# Two colons
+law host_two_colons:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a:b:c\r\n\r\n")) == Parse.Rejected{Reason.InvalidHost{}} : Parse.Outcome}
+
+# A port over 65535
+law host_big_port:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a:99999\r\n\r\n")) == Parse.Rejected{Reason.InvalidHost{}} : Parse.Outcome}
+
+# Port 65535
+law host_max_port:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a:65535\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a:65535")}], []}, []} : Parse.Outcome}
+
+# A space in the host
+law host_space:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: a b\r\n\r\n")) == Parse.Rejected{Reason.InvalidHost{}} : Parse.Outcome}
+
+# An empty Host is allowed
+law host_empty:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost:\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("")}], []}, []} : Parse.Outcome}
+
+# An IP literal in brackets
+law host_ipv6:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: [::1]:80\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("[::1]:80")}], []}, []} : Parse.Outcome}
+
+# Not an IP literal
+law host_bad_ipv6:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: [zz]\r\n\r\n")) == Parse.Rejected{Reason.InvalidHost{}} : Parse.Outcome}
+
+# An IPv4 address and port
+law host_ipv4:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET / HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("127.0.0.1:8080")}], []}, []} : Parse.Outcome}
+
+# Absolute-form with a matching Host (any case)
+law host_absolute:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET http://a.example/x HTTP/1.1\r\nHost: A.EXAMPLE\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("GET"), Req.Absolute{Req.Http{}, Path.bytes("a.example"), [[120]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("A.EXAMPLE")}], []}, []} : Parse.Outcome}
+
+# Absolute-form with a different Host
+law host_mismatch:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET http://a.example/x HTTP/1.1\r\nHost: b.example\r\n\r\n")) == Parse.Rejected{Reason.HostMismatch{}} : Parse.Outcome}
+
+# "user@" in an absolute-form target
+law host_absolute_userinfo:
+    {Parse.parse(Limits.default_limits(), Path.bytes("GET http://user@a/x HTTP/1.1\r\nHost: a\r\n\r\n")) == Parse.Rejected{Reason.InvalidTarget{}} : Parse.Outcome}
+
+# 100-continue with the body missing: the caller should send "100 Continue"
+law expect_waiting:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n")) == Parse.NeedMore{True{}} : Parse.Outcome}
+
+# ... also with a chunked body
+law expect_chunked:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nExpect: 100-continue\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhe")) == Parse.NeedMore{True{}} : Parse.Outcome}
+
+# Once the body is here, it's parsed as usual
+law expect_body_here:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nExpect: 100-Continue\r\nContent-Length: 2\r\n\r\nhi")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Expect"), Path.bytes("100-Continue")}, Req.Field{Path.bytes("Content-Length"), Path.bytes("2")}], Path.bytes("hi")}, []} : Parse.Outcome}
+
+# Any other expectation
+law expect_other:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nExpect: y 100-continue\r\nContent-Length: 5\r\n\r\n")) == Parse.Rejected{Reason.UnsupportedExpectation{}} : Parse.Outcome}
+
+# HTTP/1.0 ignores Expect
+law expect_http10:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.0\r\nExpect: foo\r\nContent-Length: 5\r\n\r\n")) == Parse.NeedMore{False{}} : Parse.Outcome}
+
+# Without Expect, nobody is waiting for "100 Continue"
+law need_more_plain:
+    {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 5\r\n\r\n")) == Parse.NeedMore{False{}} : Parse.Outcome}
 
 # H1: after Parsed, the leftover is the end of the input
 law leftover_is_suffix:
@@ -359,3 +628,98 @@ law one_content_length:
     for rest: List<&2, U32>
     for e: {Parse.parse(l, i) == Parse.Parsed{Req.Request{m, t, v, hs, body}, rest} : Parse.Outcome}
     {Framing.content_length_ok(hs, body) == True{} : Bool}
+
+# H6: an HTTP/1.1 request that is Parsed has exactly one Host field
+law http11_has_one_host:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for m: List<&2, U32>
+    for t: Req.Target
+    for hs: List<&2, Req.Field>
+    for body: List<&2, U32>
+    for rest: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Parsed{Req.Request{m, t, Req.Http11{}, hs, body}, rest} : Parse.Outcome}
+    {Host.one_host(hs) == True{} : Bool}
+
+# H8: the path of a Parsed request is one that urlpath's parse returned, so
+# urlpath's laws (no "." or "..", no unsafe bytes, ...) hold for it
+law origin_path_from_urlpath:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for m: List<&2, U32>
+    for p: List<&2, List<&2, U32>>
+    for q: Maybe<&2, List<&2, U32>>
+    for v: Req.Version
+    for hs: List<&2, Req.Field>
+    for body: List<&2, U32>
+    for rest: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Parsed{Req.Request{m, Req.Origin{p, q}, v, hs, body}, rest} : Parse.Outcome}
+    exs raw: List<&2, U32>
+    {Path.parse(raw) == Done{p} : Result<&2, &2, PathError.PathError, List<&2, List<&2, U32>>>}
+
+law absolute_path_from_urlpath:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for m: List<&2, U32>
+    for s: Req.Scheme
+    for a: List<&2, U32>
+    for p: List<&2, List<&2, U32>>
+    for q: Maybe<&2, List<&2, U32>>
+    for v: Req.Version
+    for hs: List<&2, Req.Field>
+    for body: List<&2, U32>
+    for rest: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Parsed{Req.Request{m, Req.Absolute{s, a, p, q}, v, hs, body}, rest} : Parse.Outcome}
+    exs raw: List<&2, U32>
+    {Path.parse(raw) == Done{p} : Result<&2, &2, PathError.PathError, List<&2, List<&2, U32>>>}
+
+# H2: once a request is Parsed, more input only adds to the leftover
+law more_input_keeps_parsed:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for r: Req.Request
+    for rest: List<&2, U32>
+    for +more: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Parsed{r, rest} : Parse.Outcome}
+    {Parse.parse(l, List.append(&2, U32, i, more)) == Parse.Parsed{r, List.append(&2, U32, rest, more)} : Parse.Outcome}
+
+# H3: once a request is Rejected, more input can't change that
+law more_input_keeps_rejected:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for x: Reason.Reason
+    for +more: List<&2, U32>
+    for e: {Parse.parse(l, i) == Parse.Rejected{x} : Parse.Outcome}
+    {Parse.parse(l, List.append(&2, U32, i, more)) == Parse.Rejected{x} : Parse.Outcome}
+
+# H7: the head of a request is clean: every CR is followed by LF, and every
+# LF has a CR before it. used is the head: the bytes before rest.
+law no_bare_cr_lf_in_head:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for rl: Req.RequestLine
+    for fs: List<&2, Req.Field>
+    for rest: List<&2, U32>
+    for e: {Head.head(l, i) == Head.HeadParsed{rl, fs, rest} : Head.HeadResult}
+    exs used: List<&2, U32>
+    {i == List.append(&2, U32, used, rest) : List<&2, U32>} & {Lines.crlf_clean(used) == True{} : Bool}
+
+# H10: given the same head except for the method, parse ends the request in
+# the same place with the same outcome; only the method in it differs
+law framing_ignores_method:
+    for +l: Limits.Limits
+    for +m1: List<&2, U32>
+    for +m2: List<&2, U32>
+    for +t: Req.Target
+    for +v: Req.Version
+    for +fs: List<&2, Req.Field>
+    for +rest: List<&2, U32>
+    {Parse.parse.head(Head.HeadParsed{Req.RequestLine{m1, t, v}, fs, rest}, l) == Parse.with_method(Parse.parse.head(Head.HeadParsed{Req.RequestLine{m2, t, v}, fs, rest}, l), m1) : Parse.Outcome}
+
+# H9: the parser never waits forever. With more input than the largest
+# request the limits allow (Parse.max_request), the answer is never NeedMore.
+law bounded:
+    for +l: Limits.Limits
+    for +i: List<&2, U32>
+    for hl: {Nat.is_lt(Parse.max_request(l), List.length(&2, U32, i)) == True{} : Bool}
+    {Parse.is_need_more(Parse.parse(l, i)) == False{} : Bool}

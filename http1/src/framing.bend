@@ -7,6 +7,7 @@ import ../../urlpath/src/bytes.bend as UrlByte
 import ./bytes.bend as Byte
 import ./reason.bend as Reason
 import ./request.bend as Req
+import ./fields.bend as Fields
 
 
 # How the body is framed
@@ -117,29 +118,125 @@ def cl(vs: List<&2, List<&2, U32>>, +lim: U32) -> Result<&2, &2, Reason.Reason, 
           case Con{w, r}:
               Fail{Reason.MultipleContentLength{}}
 
-# Chunked bodies aren't read yet, so any Transfer-Encoding is unsupported
-def framing.te(te: Bool, v: Req.Version, vs: List<&2, List<&2, U32>>, +lim: U32) -> Result<&2, &2, Reason.Reason, Framing>:
-  match te:
+def trim_all(ms: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match ms:
+    case Nil{}:
+        Nil{}
+    case Con{m, rest}:
+        Con{Fields.trim(m), trim_all(rest)}
+
+# Any empty member, or any member with parameters (";")
+def te.bad(ms: List<&2, List<&2, U32>>) -> Bool:
+  match ms:
+    case Nil{}:
+        False{}
+    case Con{+m, rest}:
+        List.is_empty(&2, U32, m) || UrlByte.has_byte(m, 59) || te.bad(rest)
+
+def is_chunked(m: List<&2, U32>) -> Bool:
+  Byte.eq(Byte.lower_all(m), Path.bytes("chunked"))
+
+def te.count.if(c: Bool, n: Nat) -> Nat:
+  match c:
+    case True{}:
+        1n+n
+    case False{}:
+        n
+
+def count_chunked(ms: List<&2, List<&2, U32>>) -> Nat:
+  match ms:
+    case Nil{}:
+        0n
+    case Con{+m, rest}:
+        te.count.if(is_chunked(m), count_chunked(rest))
+
+def te.last.if(last: Bool, here: Bool, r: Bool) -> Bool:
+  match last:
+    case True{}:
+        here
+    case False{}:
+        r
+
+def last_is_chunked(ms: List<&2, List<&2, U32>>) -> Bool:
+  match ms:
+    case Nil{}:
+        False{}
+    case Con{+m, +rest}:
+        te.last.if(List.is_empty(&2, List<&2, U32>, rest), is_chunked(m), last_is_chunked(rest))
+
+def te.final(last: Bool, one: Bool, any: Bool, identity: Bool) -> Result<&2, &2, Reason.Reason, Framing>:
+  match last:
+    case True{}:
+        match one:
+          case True{}:
+              Done{Chunked{}}
+          case False{}:
+              Fail{Reason.UnsupportedTransferCoding{}}
+    case False{}:
+        match any:
+          case True{}:
+              Fail{Reason.ChunkedNotFinal{}}
+          case False{}:
+              match identity:
+                case True{}:
+                    Fail{Reason.UnsupportedTransferCoding{}}
+                case False{}:
+                    Fail{Reason.ChunkedNotFinal{}}
+
+def te.members(bad: Bool, twice: Bool, +ms: List<&2, List<&2, U32>>) -> Result<&2, &2, Reason.Reason, Framing>:
+  match bad:
+    case True{}:
+        Fail{Reason.InvalidTransferEncoding{}}
+    case False{}:
+        match twice:
+          case True{}:
+              Fail{Reason.ChunkedAppliedTwice{}}
+          case False{}:
+              te.final(last_is_chunked(ms), Nat.is_eq(List.length(&2, List<&2, U32>, ms), 1n),
+                Nat.is_eq(count_chunked(ms), 1n),
+                Byte.eq(Byte.lower_all(List.concat(&2, U32, ms)), Path.bytes("identity")) && Nat.is_eq(List.length(&2, List<&2, U32>, ms), 1n))
+
+# One Transfer-Encoding value. The only one accepted is "chunked", alone.
+# "gzip, chunked" and "identity" are codings we don't support; chunked must
+# come last and only once; empty members and parameters are invalid.
+def te.value(+v: List<&2, U32>) -> Result<&2, &2, Reason.Reason, Framing>:
+  te.members(te.bad(trim_all(Byte.split_on(v, 44))), Nat.is_le(2n, count_chunked(trim_all(Byte.split_on(v, 44)))),
+    trim_all(Byte.split_on(v, 44)))
+
+# The Transfer-Encoding values: two lines count as applying chunked twice
+def te(vs: List<&2, List<&2, U32>>) -> Result<&2, &2, Reason.Reason, Framing>:
+  match vs:
+    case Nil{}:
+        Fail{Reason.InvalidTransferEncoding{}}
+    case Con{+v, rest}:
+        match rest:
+          case Nil{}:
+              te.value(v)
+          case Con{w, r}:
+              Fail{Reason.ChunkedAppliedTwice{}}
+
+def framing.te(te_present: Bool, v: Req.Version, vs: List<&2, List<&2, U32>>, tes: List<&2, List<&2, U32>>, +lim: U32) -> Result<&2, &2, Reason.Reason, Framing>:
+  match te_present:
     case True{}:
         match v:
           case Req.Http10{}:
               Fail{Reason.TransferEncodingInHttp10{}}
           case Req.Http11{}:
-              Fail{Reason.UnsupportedTransferCoding{}}
+              te(tes)
     case False{}:
         cl(vs, lim)
 
-def framing.go(both: Bool, te: Bool, v: Req.Version, vs: List<&2, List<&2, U32>>, +lim: U32) -> Result<&2, &2, Reason.Reason, Framing>:
+def framing.go(both: Bool, te_present: Bool, v: Req.Version, vs: List<&2, List<&2, U32>>, tes: List<&2, List<&2, U32>>, +lim: U32) -> Result<&2, &2, Reason.Reason, Framing>:
   match both:
     case True{}:
         Fail{Reason.ContentLengthWithTransferEncoding{}}
     case False{}:
-        framing.te(te, v, vs, lim)
+        framing.te(te_present, v, vs, tes, lim)
 
 # Decide the framing from the version, the fields and the body limit
 def framing(v: Req.Version, +fs: List<&2, Req.Field>, +lim: U32) -> Result<&2, &2, Reason.Reason, Framing>:
   framing.go(both_framing(fs), has_field(fs, Path.bytes("transfer-encoding")), v,
-    named(fs, Path.bytes("content-length")), lim)
+    named(fs, Path.bytes("content-length")), named(fs, Path.bytes("transfer-encoding")), lim)
 
 def cl_ok.v(m: Maybe<&2, U32>, b: List<&2, U32>) -> Bool:
   match m:

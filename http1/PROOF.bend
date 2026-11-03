@@ -8,6 +8,13 @@ import ./src/head.bend as Head
 import ./src/parse.bend as Parse
 import ./proof/framing.bend as FrameProof
 import ./proof/suffix.bend as SufProof
+import ./proof/host.bend as HostProof
+import ./proof/target.bend as TargetProof
+import ./proof/stable.bend as StableProof
+import ./proof/clean.bend as CleanProof
+import ./proof/method.bend as MethodProof
+import ./proof/bound.bend as BoundProof
+import ./src/host.bend as Host
 
 
 def Laws.line_root():
@@ -239,13 +246,240 @@ def Laws.parse_cl_too_large():
 
 def Laws.cl_and_te_rejected(l, i, m, t, v, hs, body, rest, e):
   %e : FrameProof.P4(_)
-  FrameProof.p4_head(Head.head(l, i), Parse.body_limit(l))
+  FrameProof.p4_head(Head.head(l, i), l)
 
 def Laws.one_content_length(l, i, m, t, v, hs, body, rest, e):
   %e : FrameProof.P5(_)
-  FrameProof.p5_head(Head.head(l, i), Parse.body_limit(l))
+  FrameProof.p5_head(Head.head(l, i), l)
 
 def Laws.leftover_is_suffix(l, i, r, rest, e):
   %e : SufProof.PS(_, i)
-  SufProof.ps_head(Head.head(l, i), i, Parse.body_limit(l), SufProof.hs_head(l, i))
+  SufProof.ps_head(Head.head(l, i), i, l, SufProof.hs_head(l, i))
+
+
+def Laws.chunked_simple():
+  {==}
+
+def Laws.chunked_huge_ext_limit():
+  {==}
+
+def Laws.chunked_two():
+  {==}
+
+def Laws.chunked_partial_data():
+  {==}
+
+def Laws.chunked_partial_crlf():
+  {==}
+
+def Laws.chunked_no_last():
+  {==}
+
+def Laws.chunked_trailer():
+  {==}
+
+def Laws.chunked_leading_zeros():
+  {==}
+
+def Laws.chunked_hex():
+  {==}
+
+def Laws.chunked_0x():
+  {==}
+
+def Laws.chunked_plus():
+  {==}
+
+def Laws.chunked_space_before():
+  {==}
+
+def Laws.chunked_space_after():
+  {==}
+
+def Laws.chunked_empty_size():
+  {==}
+
+def Laws.chunked_overflow():
+  {==}
+
+def Laws.chunked_too_large():
+  {==}
+
+def Laws.chunked_bare_lf_ext():
+  {==}
+
+def Laws.chunked_bare_cr():
+  {==}
+
+def Laws.chunked_lf_size():
+  {==}
+
+def Laws.chunked_ext_ok():
+  {==}
+
+def Laws.chunked_ext_spaces():
+  {==}
+
+def Laws.chunked_ext_empty():
+  {==}
+
+def Laws.chunked_ext_no_name():
+  {==}
+
+def Laws.chunked_ext_unterminated():
+  {==}
+
+def Laws.chunked_ext_space_value():
+  {==}
+
+def Laws.chunked_ext_space_before():
+  {==}
+
+def Laws.chunked_spill():
+  {==}
+
+def Laws.chunked_spill_cr():
+  {==}
+
+def Laws.chunked_bad_trailer():
+  {==}
+
+def Laws.te_upper():
+  {==}
+
+def Laws.te_gzip_chunked():
+  {==}
+
+def Laws.te_identity():
+  {==}
+
+def Laws.te_not_final():
+  {==}
+
+def Laws.te_unknown():
+  {==}
+
+def Laws.te_obfuscated():
+  {==}
+
+def Laws.te_twice():
+  {==}
+
+def Laws.te_params():
+  {==}
+
+def Laws.te_empty():
+  {==}
+
+def Laws.te_leading_comma():
+  {==}
+
+def Laws.te_trailing_comma():
+  {==}
+
+def Laws.te_two_lines():
+  {==}
+
+def Laws.http11_has_one_host(l, i, m, t, hs, body, rest, e):
+  %e : HostProof.P6(_)
+  HostProof.p6_head(Head.head(l, i), l)
+
+def Laws.origin_path_from_urlpath(l, i, m, p, q, v, hs, body, rest, e):
+  %e : TargetProof.P8(_)
+  TargetProof.p8_head(Head.head(l, i), l, TargetProof.h8_head(l, i))
+
+def Laws.absolute_path_from_urlpath(l, i, m, s, a, p, q, v, hs, body, rest, e):
+  %e : TargetProof.P8(_)
+  TargetProof.p8_head(Head.head(l, i), l, TargetProof.h8_head(l, i))
+
+
+def Laws.host_ok():
+  {==}
+
+def Laws.host_missing():
+  {==}
+
+def Laws.host_http10():
+  {==}
+
+def Laws.host_two():
+  {==}
+
+def Laws.host_list():
+  {==}
+
+def Laws.host_slash():
+  {==}
+
+def Laws.host_userinfo():
+  {==}
+
+def Laws.host_two_colons():
+  {==}
+
+def Laws.host_big_port():
+  {==}
+
+def Laws.host_max_port():
+  {==}
+
+def Laws.host_space():
+  {==}
+
+def Laws.host_empty():
+  {==}
+
+def Laws.host_ipv6():
+  {==}
+
+def Laws.host_bad_ipv6():
+  {==}
+
+def Laws.host_ipv4():
+  {==}
+
+def Laws.host_absolute():
+  {==}
+
+def Laws.host_mismatch():
+  {==}
+
+def Laws.host_absolute_userinfo():
+  {==}
+
+def Laws.expect_waiting():
+  {==}
+
+def Laws.expect_chunked():
+  {==}
+
+def Laws.expect_body_here():
+  {==}
+
+def Laws.expect_other():
+  {==}
+
+def Laws.expect_http10():
+  {==}
+
+def Laws.need_more_plain():
+  {==}
+
+def Laws.more_input_keeps_parsed(l, i, r, rest, more, e):
+  %e : StableProof.OSt(_, Parse.parse(l, List.append(&2, U32, i, more)), more)
+  StableProof.st_parse(l, i, more)
+
+def Laws.more_input_keeps_rejected(l, i, x, more, e):
+  %e : StableProof.OSt(_, Parse.parse(l, List.append(&2, U32, i, more)), more)
+  StableProof.st_parse(l, i, more)
+
+def Laws.no_bare_cr_lf_in_head(l, i, rl, fs, rest, e):
+  %e : CleanProof.HS7(_, i)
+  CleanProof.hs7_head(l, i)
+
+def Laws.framing_ignores_method(l, m1, m2, t, v, fs, rest):
+  MethodProof.mb_checks(Host.checks(v, t, fs), m1, m2, t, v, fs, rest, l)
+
+def Laws.bounded(l, i, hl):
+  BoundProof.nm_false(Parse.parse(l, i), i, l, BoundProof.pb_parse(l, i), hl)
 

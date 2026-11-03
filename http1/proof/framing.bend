@@ -5,11 +5,15 @@ import Base
 import ../../urlpath/urlpath.bend as Path
 import ../../urlpath/proof/logic.bend as Logic
 import ../../urlpath/src/bytes.bend as UrlByte
+import ../src/bytes.bend as Byte
 import ../src/reason.bend as Reason
 import ../src/request.bend as Req
 import ../src/head.bend as Head
 import ../src/framing.bend as Framing
 import ../src/parse.bend as Parse
+import ../src/host.bend as Host
+import ../src/limits.bend as Limits
+import ../src/chunked.bend as Chunked
 
 
 # ---- H4 ----
@@ -50,17 +54,18 @@ law f4_go:
   for te: Bool
   for v: Req.Version
   for vs: List<&2, List<&2, U32>>
+  for tes: List<&2, List<&2, U32>>
   for +lim: U32
   for +fs: List<&2, Req.Field>
   for ek: {k == Framing.both_framing(fs) : Bool}
-  F4(Framing.framing.go(k, te, v, vs, lim), fs)
+  F4(Framing.framing.go(k, te, v, vs, tes, lim), fs)
 
-def f4_go(k, te, v, vs, lim, fs, ek):
+def f4_go(k, te, v, vs, tes, lim, fs, ek):
   match k:
     case True{}:
       Unit{}
     case False{}:
-      f4_any(Framing.framing.te(te, v, vs, lim), fs, Equal.sym(Bool, False{}, Framing.both_framing(fs), ek))
+      f4_any(Framing.framing.te(te, v, vs, tes, lim), fs, Equal.sym(Bool, False{}, Framing.both_framing(fs), ek))
 
 law f4:
   for v: Req.Version
@@ -70,25 +75,45 @@ law f4:
 
 def f4(v, fs, lim):
   f4_go(Framing.both_framing(fs), Framing.has_field(fs, Path.bytes("transfer-encoding")), v,
-    Framing.named(fs, Path.bytes("content-length")), lim, fs, {==})
+    Framing.named(fs, Path.bytes("content-length")), Framing.named(fs, Path.bytes("transfer-encoding")), lim, fs, {==})
 
 law p4_body:
-  for mb: Maybe<&2, Parse.Taken>
+  for mb: Maybe<&2, Byte.Taken>
   for m: List<&2, U32>
   for t: Req.Target
   for v: Req.Version
   for fs: List<&2, Req.Field>
+  for +cont: Bool
   for h: {Framing.both_framing(fs) == False{} : Bool}
-  P4(Parse.parse.body(mb, m, t, v, fs))
+  P4(Parse.parse.body(mb, m, t, v, fs, cont))
 
-def p4_body(mb, m, t, v, fs, h):
+def p4_body(mb, m, t, v, fs, cont, h):
   match mb:
     case None{}:
       Unit{}
     case Some{tk}:
       match tk:
-        case Parse.Taken{a, b}:
+        case Byte.Taken{a, b}:
           h
+
+law p4_chunked:
+  for c: Chunked.ChunkResult
+  for m: List<&2, U32>
+  for t: Req.Target
+  for v: Req.Version
+  for fs: List<&2, Req.Field>
+  for +cont: Bool
+  for h: {Framing.both_framing(fs) == False{} : Bool}
+  P4(Parse.parse.chunked(c, m, t, v, fs, cont))
+
+def p4_chunked(c, m, t, v, fs, cont, h):
+  match c:
+    case Chunked.ChunkNeedMore{}:
+      Unit{}
+    case Chunked.ChunkRejected{e}:
+      Unit{}
+    case Chunked.ChunkDone{b, left}:
+      h
 
 law p4_frame:
   for r: Result<&2, &2, Reason.Reason, Framing.Framing>
@@ -96,11 +121,13 @@ law p4_frame:
   for t: Req.Target
   for v: Req.Version
   for +fs: List<&2, Req.Field>
-  for rest: List<&2, U32>
+  for +rest: List<&2, U32>
+  for +limits: Limits.Limits
+  for +cont: Bool
   for hr: F4(r, fs)
-  P4(Parse.parse.frame(r, m, t, v, fs, rest))
+  P4(Parse.parse.frame(r, m, t, v, fs, rest, limits, cont))
 
-def p4_frame(r, m, t, v, fs, rest, hr):
+def p4_frame(r, m, t, v, fs, rest, limits, cont, hr):
   match r:
     case Fail{e}:
       Unit{}
@@ -109,16 +136,33 @@ def p4_frame(r, m, t, v, fs, rest, hr):
         case Framing.NoBody{}:
           hr
         case Framing.Length{n}:
-          p4_body(Parse.take(U32.to_nat(n), rest), m, t, v, fs, hr)
+          p4_body(Byte.take(U32.to_nat(n), rest), m, t, v, fs, cont, hr)
         case Framing.Chunked{}:
-          Unit{}
+          p4_chunked(Chunked.read(limits, rest), m, t, v, fs, cont, hr)
+
+law p4_checks:
+  for r: Result<&2, &2, Reason.Reason, Bool>
+  for m: List<&2, U32>
+  for t: Req.Target
+  for +v: Req.Version
+  for +fs: List<&2, Req.Field>
+  for +rest: List<&2, U32>
+  for +limits: Limits.Limits
+  P4(Parse.parse.checks(r, m, t, v, fs, rest, limits))
+
+def p4_checks(r, m, t, v, fs, rest, limits):
+  match r:
+    case Fail{e}:
+      Unit{}
+    case Done{+cont}:
+      p4_frame(Framing.framing(v, fs, Limits.body(limits)), m, t, v, fs, rest, limits, cont, f4(v, fs, Limits.body(limits)))
 
 law p4_head:
   for h: Head.HeadResult
-  for +lim: U32
-  P4(Parse.parse.head(h, lim))
+  for +limits: Limits.Limits
+  P4(Parse.parse.head(h, limits))
 
-def p4_head(h, lim):
+def p4_head(h, limits):
   match h:
     case Head.HeadNeedMore{}:
       Unit{}
@@ -126,8 +170,8 @@ def p4_head(h, lim):
       Unit{}
     case Head.HeadParsed{rl, +fs, rest}:
       match rl:
-        case Req.RequestLine{m, t, +v}:
-          p4_frame(Framing.framing(v, fs, lim), m, t, v, fs, rest, f4(v, fs, lim))
+        case Req.RequestLine{m, +t, +v}:
+          p4_checks(Host.checks(v, t, fs), m, t, v, fs, rest, limits)
 
 
 # ---- H5 ----
@@ -155,7 +199,7 @@ def G5(r: Result<&2, &2, Reason.Reason, Framing.Framing>, vs: List<&2, List<&2, 
         case Framing.Length{n}:
           @b: List<&2, U32> -> {List.length(&2, U32, b) == U32.to_nat(n) : Nat} -> {Framing.cl_ok.go(vs, b) == True{} : Bool}
         case Framing.Chunked{}:
-          Unit
+          @b: List<&2, U32> -> {Framing.cl_ok.go(vs, b) == True{} : Bool}
 
 law nat_eq_refl:
   for x: Nat
@@ -252,15 +296,51 @@ def g5_cl(vs, lim):
         case Con{w, r}:
           Unit{}
 
+# With Transfer-Encoding present and not both framing fields, there is no
+# Content-Length, so the check passes for any body
+law vs_nil:
+  for +vs: List<&2, List<&2, U32>>
+  for h: {False{} == Bool.and(Bool.not(List.is_empty(&2, List<&2, U32>, vs)), True{}) : Bool}
+  for b: List<&2, U32>
+  {Framing.cl_ok.go(vs, b) == True{} : Bool}
+
+def vs_nil(vs, h, b):
+  match vs:
+    case Nil{}:
+      {==}
+    case Con{v, r}:
+      Logic.absurd({Framing.cl_ok.go(Con{v, r}, b) == True{} : Bool}, Logic.true_ne_false(h))
+
+law g5_nil:
+  for r: Result<&2, &2, Reason.Reason, Framing.Framing>
+  for +vs: List<&2, List<&2, U32>>
+  for +h: {False{} == Bool.and(Bool.not(List.is_empty(&2, List<&2, U32>, vs)), True{}) : Bool}
+  G5(r, vs)
+
+def g5_nil(r, vs, h):
+  match r:
+    case Fail{e}:
+      Unit{}
+    case Done{fr}:
+      match fr:
+        case Framing.NoBody{}:
+          vs_nil(vs, h, Nil{})
+        case Framing.Length{n}:
+          b => hb => vs_nil(vs, h, b)
+        case Framing.Chunked{}:
+          b => vs_nil(vs, h, b)
+
 law g5_go:
   for k: Bool
   for te: Bool
   for v: Req.Version
   for +vs: List<&2, List<&2, U32>>
+  for tes: List<&2, List<&2, U32>>
   for +lim: U32
-  G5(Framing.framing.go(k, te, v, vs, lim), vs)
+  for ek: {k == Bool.and(Bool.not(List.is_empty(&2, List<&2, U32>, vs)), te) : Bool}
+  G5(Framing.framing.go(k, te, v, vs, tes, lim), vs)
 
-def g5_go(k, te, v, vs, lim):
+def g5_go(k, te, v, vs, tes, lim, ek):
   match k:
     case True{}:
       Unit{}
@@ -271,26 +351,26 @@ def g5_go(k, te, v, vs, lim):
             case Req.Http10{}:
               Unit{}
             case Req.Http11{}:
-              Unit{}
+              g5_nil(Framing.te(tes), vs, ek)
         case False{}:
           g5_cl(vs, lim)
 
 # take gives exactly n bytes
-def TakeLen(mb: Maybe<&2, Parse.Taken>, k: Nat) -> Type:
+def TakeLen(mb: Maybe<&2, Byte.Taken>, k: Nat) -> Type:
   match mb:
     case None{}:
       Unit
     case Some{tk}:
       match tk:
-        case Parse.Taken{a, b}:
+        case Byte.Taken{a, b}:
           {List.length(&2, U32, a) == k : Nat}
 
 law take_len_cons:
   for +h: U32
-  for mb: Maybe<&2, Parse.Taken>
+  for mb: Maybe<&2, Byte.Taken>
   for k: Nat
   for ih: TakeLen(mb, k)
-  TakeLen(Parse.take.cons(h, mb), 1n+k)
+  TakeLen(Byte.take.cons(h, mb), 1n+k)
 
 def take_len_cons(h, mb, k, ih):
   match mb:
@@ -298,13 +378,13 @@ def take_len_cons(h, mb, k, ih):
       Unit{}
     case Some{tk}:
       match tk:
-        case Parse.Taken{a, b}:
+        case Byte.Taken{a, b}:
           Equal.cong(Nat, Nat, x => 1n+x, List.length(&2, U32, a), k, ih)
 
 law take_len:
   for +k: Nat
   for b: List<&2, U32>
-  TakeLen(Parse.take(k, b), k)
+  TakeLen(Byte.take(k, b), k)
 
 def take_len(k, b):
   match k:
@@ -315,27 +395,47 @@ def take_len(k, b):
         case Nil{}:
           Unit{}
         case Con{+h, +t}:
-          take_len_cons(h, Parse.take(j, t), j, take_len(j, t))
+          take_len_cons(h, Byte.take(j, t), j, take_len(j, t))
 
 law p5_body:
-  for mb: Maybe<&2, Parse.Taken>
+  for mb: Maybe<&2, Byte.Taken>
   for m: List<&2, U32>
   for t: Req.Target
   for v: Req.Version
   for fs: List<&2, Req.Field>
   for n: U32
+  for +cont: Bool
   for hf: @b: List<&2, U32> -> {List.length(&2, U32, b) == U32.to_nat(n) : Nat} -> {Framing.content_length_ok(fs, b) == True{} : Bool}
   for hl: TakeLen(mb, U32.to_nat(n))
-  P5(Parse.parse.body(mb, m, t, v, fs))
+  P5(Parse.parse.body(mb, m, t, v, fs, cont))
 
-def p5_body(mb, m, t, v, fs, n, hf, hl):
+def p5_body(mb, m, t, v, fs, n, cont, hf, hl):
   match mb:
     case None{}:
       Unit{}
     case Some{tk}:
       match tk:
-        case Parse.Taken{+a, b}:
+        case Byte.Taken{+a, b}:
           hf(a, hl)
+
+law p5_chunked:
+  for c: Chunked.ChunkResult
+  for m: List<&2, U32>
+  for t: Req.Target
+  for v: Req.Version
+  for fs: List<&2, Req.Field>
+  for +cont: Bool
+  for hf: @b: List<&2, U32> -> {Framing.content_length_ok(fs, b) == True{} : Bool}
+  P5(Parse.parse.chunked(c, m, t, v, fs, cont))
+
+def p5_chunked(c, m, t, v, fs, cont, hf):
+  match c:
+    case Chunked.ChunkNeedMore{}:
+      Unit{}
+    case Chunked.ChunkRejected{e}:
+      Unit{}
+    case Chunked.ChunkDone{+b, left}:
+      hf(b)
 
 law p5_frame:
   for r: Result<&2, &2, Reason.Reason, Framing.Framing>
@@ -344,10 +444,12 @@ law p5_frame:
   for v: Req.Version
   for +fs: List<&2, Req.Field>
   for +rest: List<&2, U32>
+  for +limits: Limits.Limits
+  for +cont: Bool
   for hr: G5(r, Framing.named(fs, Path.bytes("content-length")))
-  P5(Parse.parse.frame(r, m, t, v, fs, rest))
+  P5(Parse.parse.frame(r, m, t, v, fs, rest, limits, cont))
 
-def p5_frame(r, m, t, v, fs, rest, hr):
+def p5_frame(r, m, t, v, fs, rest, limits, cont, hr):
   match r:
     case Fail{e}:
       Unit{}
@@ -356,16 +458,35 @@ def p5_frame(r, m, t, v, fs, rest, hr):
         case Framing.NoBody{}:
           hr
         case Framing.Length{+n}:
-          p5_body(Parse.take(U32.to_nat(n), rest), m, t, v, fs, n, hr, take_len(U32.to_nat(n), rest))
+          p5_body(Byte.take(U32.to_nat(n), rest), m, t, v, fs, n, cont, hr, take_len(U32.to_nat(n), rest))
         case Framing.Chunked{}:
-          Unit{}
+          p5_chunked(Chunked.read(limits, rest), m, t, v, fs, cont, hr)
+
+law p5_checks:
+  for r: Result<&2, &2, Reason.Reason, Bool>
+  for m: List<&2, U32>
+  for t: Req.Target
+  for +v: Req.Version
+  for +fs: List<&2, Req.Field>
+  for +rest: List<&2, U32>
+  for +limits: Limits.Limits
+  P5(Parse.parse.checks(r, m, t, v, fs, rest, limits))
+
+def p5_checks(r, m, t, v, fs, rest, limits):
+  match r:
+    case Fail{e}:
+      Unit{}
+    case Done{+cont}:
+      p5_frame(Framing.framing(v, fs, Limits.body(limits)), m, t, v, fs, rest, limits, cont,
+        g5_go(Framing.both_framing(fs), Framing.has_field(fs, Path.bytes("transfer-encoding")), v,
+          Framing.named(fs, Path.bytes("content-length")), Framing.named(fs, Path.bytes("transfer-encoding")), Limits.body(limits), {==}))
 
 law p5_head:
   for h: Head.HeadResult
-  for +lim: U32
-  P5(Parse.parse.head(h, lim))
+  for +limits: Limits.Limits
+  P5(Parse.parse.head(h, limits))
 
-def p5_head(h, lim):
+def p5_head(h, limits):
   match h:
     case Head.HeadNeedMore{}:
       Unit{}
@@ -373,7 +494,5 @@ def p5_head(h, lim):
       Unit{}
     case Head.HeadParsed{rl, +fs, rest}:
       match rl:
-        case Req.RequestLine{m, t, +v}:
-          p5_frame(Framing.framing(v, fs, lim), m, t, v, fs, rest,
-            g5_go(Framing.both_framing(fs), Framing.has_field(fs, Path.bytes("transfer-encoding")), v,
-              Framing.named(fs, Path.bytes("content-length")), lim))
+        case Req.RequestLine{m, +t, +v}:
+          p5_checks(Host.checks(v, t, fs), m, t, v, fs, rest, limits)

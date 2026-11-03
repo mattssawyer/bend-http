@@ -157,3 +157,66 @@ def lower_all(b: List<&2, U32>) -> List<&2, U32>:
         Nil{}
     case Con{+h, t}:
         Con{lower(h), lower_all(t)}
+
+def split_on.if(sep: Bool, +h: U32, rest: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match sep:
+    case True{}:
+        Con{Nil{}, rest}
+    case False{}:
+        match rest:
+          case Nil{}:
+              [[h]]
+          case Con{first, more}:
+              Con{Con{h, first}, more}
+
+# Split b at every byte x: "a,b," at "," -> ["a", "b", ""]
+def split_on(b: List<&2, U32>, +x: U32) -> List<&2, List<&2, U32>>:
+  match b:
+    case Nil{}:
+        [Nil{}]
+    case Con{+h, t}:
+        split_on.if(U32.is_eq(h, x), h, split_on(t, x))
+
+# The first n bytes of b, and what follows them
+type Taken is Data:
+  Taken{taken: List<&2, U32>, rest: List<&2, U32>}
+
+def take.cons(+h: U32, m: Maybe<&2, Taken>) -> Maybe<&2, Taken>:
+  match m:
+    case None{}:
+        None{}
+    case Some{tk}:
+        match tk:
+          case Taken{a, b}:
+              Some{Taken{Con{h, a}, b}}
+
+# The first n bytes of b, or None if b is shorter
+def take(n: Nat, b: List<&2, U32>) -> Maybe<&2, Taken>:
+  match n:
+    case 0n:
+        Some{Taken{Nil{}, b}}
+    case 1n+k:
+        match b:
+          case Nil{}:
+              None{}
+          case Con{+h, t}:
+              take.cons(h, take(k, t))
+
+def prefix_has.if(stop: Bool, here: Bool, k: Unit -> Bool) -> Bool:
+  match stop:
+    case True{}:
+        False{}
+    case False{}:
+        match here:
+          case True{}:
+              True{}
+          case False{}:
+              k(Unit{})
+
+# Is byte x among the first n bytes of b?
+def prefix_has(b: List<&2, U32>, +n: U32, +x: U32) -> Bool:
+  match b:
+    case Nil{}:
+        False{}
+    case Con{+h, t}:
+        prefix_has.if(U32.is_zero(n), U32.is_eq(h, x), u => prefix_has(t, U32.sub(n, 1), x))
