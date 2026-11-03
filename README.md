@@ -58,7 +58,7 @@ urlpath/
   LAWS.bend      statements that must hold
   PROOF.bend     one proof per law; the file you check
   proof/         the helper lemmas those proofs use
-http1/           same shape; in progress (requests parse with all ten H laws proven; responses are next)
+http1/           same shape; requests parse and responses write, with all ten H laws and R1-R3 proven
 ```
 
 ## Checking the proofs

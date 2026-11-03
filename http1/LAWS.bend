@@ -10,6 +10,8 @@ import ./src/framing.bend as Framing
 import ./src/parse.bend as Parse
 import ./src/host.bend as Host
 import ./src/lines.bend as Lines
+import ./src/response.bend as Resp
+import ./src/bytes.bend as Byte
 
 
 # Request line examples (the line without its CRLF)
@@ -723,3 +725,153 @@ law bounded:
     for +i: List<&2, U32>
     for hl: {Nat.is_lt(Parse.max_request(l), List.length(&2, U32, i)) == True{} : Bool}
     {Parse.is_need_more(Parse.parse(l, i)) == False{} : Bool}
+
+
+# ---- Response examples ----
+
+# A plain 200 gets its reason phrase and a Content-Length
+law write_ok:
+    {Resp.write(Resp.Response{200, [], Path.bytes("hi")}) == Path.bytes("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi") : List<&2, U32>}
+
+# Fields go out in the caller's order, before Content-Length
+law write_fields:
+    {Resp.write(Resp.Response{404, [Req.Field{Path.bytes("Content-Type"), Path.bytes("text/plain")}, Req.Field{Path.bytes("X-A"), Path.bytes("1")}], Path.bytes("no")}) == Path.bytes("HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nX-A: 1\r\nContent-Length: 2\r\n\r\nno") : List<&2, U32>}
+
+# 204 has no body, so no Content-Length
+law write_no_content:
+    {Resp.write(Resp.Response{204, [], []}) == Path.bytes("HTTP/1.1 204 No Content\r\n\r\n") : List<&2, U32>}
+
+# A code with no phrase in the table gets an empty one
+law write_unknown_code:
+    {Resp.write(Resp.Response{599, [], []}) == Path.bytes("HTTP/1.1 599 \r\nContent-Length: 0\r\n\r\n") : List<&2, U32>}
+
+# Ten bytes: the count carries into a second digit
+law write_length_ten:
+    {Resp.write(Resp.Response{200, [], Path.bytes("0123456789")}) == Path.bytes("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n0123456789") : List<&2, U32>}
+
+# 100 Continue, the interim answer to "Expect: 100-continue"
+law write_continue:
+    {Resp.write(Resp.Response{100, [], []}) == Path.bytes("HTTP/1.1 100 Continue\r\n\r\n") : List<&2, U32>}
+
+# Good parts make a response
+law response_ok:
+    {Resp.response(200, [Req.Field{Path.bytes("X-A"), Path.bytes("1")}], Path.bytes("hi")) == Done{Resp.Response{200, [Req.Field{Path.bytes("X-A"), Path.bytes("1")}], Path.bytes("hi")}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# Status codes are 100-599
+law response_status_low:
+    {Resp.response(99, [], []) == Fail{Resp.InvalidStatus{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# ...
+law response_status_high:
+    {Resp.response(600, [], []) == Fail{Resp.InvalidStatus{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# A field name is a token: no spaces
+law response_name_space:
+    {Resp.response(200, [Req.Field{Path.bytes("X A"), Path.bytes("1")}], []) == Fail{Resp.InvalidHeaderName{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# ... and not empty
+law response_name_empty:
+    {Resp.response(200, [Req.Field{[], Path.bytes("1")}], []) == Fail{Resp.InvalidHeaderName{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# A CRLF in a value would start a new field (response splitting)
+law response_value_crlf:
+    {Resp.response(200, [Req.Field{Path.bytes("X-A"), Path.bytes("1\r\nSet-Cookie: x")}], []) == Fail{Resp.InvalidHeaderValue{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# NUL is refused too
+law response_value_nul:
+    {Resp.response(200, [Req.Field{Path.bytes("X-A"), [49, 0]}], []) == Fail{Resp.InvalidHeaderValue{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# write adds Content-Length itself, so the caller may not, in any case
+law response_own_length:
+    {Resp.response(200, [Req.Field{Path.bytes("content-LENGTH"), Path.bytes("5")}], []) == Fail{Resp.FramingHeader{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# ... nor Transfer-Encoding
+law response_own_te:
+    {Resp.response(200, [Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], []) == Fail{Resp.FramingHeader{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# 204 can't carry a body: the client would read it as the next response
+law response_body_204:
+    {Resp.response(204, [], Path.bytes("x")) == Fail{Resp.BodyNotAllowed{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# ... nor can 304
+law response_body_304:
+    {Resp.response(304, [], Path.bytes("x")) == Fail{Resp.BodyNotAllowed{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+
+# 205 (Reset Content) can't carry content either...
+law response_body_205:
+    {Resp.response(205, [], Path.bytes("x")) == Fail{Resp.BodyNotAllowed{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# ... but unlike 204 it says so with Content-Length: 0
+law write_reset_content:
+    {Resp.write(Resp.Response{205, [], []}) == Path.bytes("HTTP/1.1 205 Reset Content\r\nContent-Length: 0\r\n\r\n") : List<&2, U32>}
+
+# The body must be bytes
+law response_not_a_byte:
+    {Resp.response(200, [], [104, 256]) == Fail{Resp.NotAByte{}} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+
+# The answer to HEAD: the head a GET gets, with its Content-Length, and no body
+law write_head_ok:
+    {Resp.write_head(Resp.Response{200, [], Path.bytes("hello")}) == Path.bytes("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n") : List<&2, U32>}
+
+# ---- Response readers: what the laws look at ----
+
+law reader_lengths:
+    {Resp.content_lengths(Path.bytes("HTTP/1.1 200 OK\r\nA: 1\r\ncontent-length:  120 \r\nContent-Length: x\r\n\r\nContent-Length: 9")) == [Some{120n}, None{}] : List<&2, Maybe<&2, Nat>>}
+
+law reader_head_end:
+    {Resp.head_end(Path.bytes("HTTP/1.1 200 OK\r\nA: 1\r\n\r\nB\r\n\r\n")) == Byte.Cut{Path.bytes("HTTP/1.1 200 OK\r\nA: 1\r\n\r\n"), Path.bytes("B\r\n\r\n")} : Byte.Cut}
+
+law reader_line_safe:
+    {Resp.headers_safe([Req.Field{Path.bytes("A"), Path.bytes("x\ry")}]) == False{} : Bool}
+
+
+# A stray CR doesn't hide the lines after it from the reader
+law reader_stray_cr:
+    {Resp.content_lengths(Path.bytes("HTTP/1.1 200 OK\r\nA: 1\rContent-Length: 7\r\n\r\n")) == [Some{7n}] : List<&2, Maybe<&2, Nat>>}
+
+
+# ---- Response laws ----
+
+# R1: a response that response built has no CR, LF or NUL in any field
+# name or value, so no field can end its line early and start another
+law response_values_safe:
+    for +s: U32
+    for +hs: List<&2, Req.Field>
+    for +b: List<&2, U32>
+    for +r: Resp.Response
+    for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+    {Resp.headers_safe(Resp.headers(r)) == True{} : Bool}
+
+# R2: with a status that has a body, a reader finds exactly one
+# Content-Length in what write sends, and its number is the body's length
+law write_one_length:
+    for +s: U32
+    for +hs: List<&2, Req.Field>
+    for +b: List<&2, U32>
+    for +r: Resp.Response
+    for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+    for hb: {Resp.has_length(s) == True{} : Bool}
+    {Resp.content_lengths(Resp.write(r)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
+
+# R3: what write sends is write_head's bytes, then the body, and the head
+# ends at the first CRLF CRLF, so no part of the body can be read as a
+# header. A HEAD answer is the same head, without the body.
+law write_splits:
+    for +s: U32
+    for +hs: List<&2, Req.Field>
+    for +b: List<&2, U32>
+    for +r: Resp.Response
+    for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+    {Resp.head_end(Resp.write(r)) == Byte.Cut{Resp.write_head(r), b} : Byte.Cut} & {Resp.write(r) == List.append(&2, U32, Resp.write_head(r), b) : List<&2, U32>}
+
+# R2 for write_head: the HEAD answer has the one Content-Length a GET would
+# get, the body's length
+law write_head_one_length:
+    for +s: U32
+    for +hs: List<&2, Req.Field>
+    for +b: List<&2, U32>
+    for +r: Resp.Response
+    for e: {Resp.response(s, hs, b) == Done{r} : Result<&2, &2, Resp.ResponseError, Resp.Response>}
+    for hb: {Resp.has_length(s) == True{} : Bool}
+    {Resp.content_lengths(Resp.write_head(r)) == [Some{List.length(&2, U32, b)}] : List<&2, Maybe<&2, Nat>>}
