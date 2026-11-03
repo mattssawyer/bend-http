@@ -260,6 +260,9 @@ def Laws.leftover_is_suffix(l, i, r, rest, e):
 def Laws.chunked_simple():
   {==}
 
+def Laws.chunked_huge_ext_limit():
+  {==}
+
 def Laws.chunked_two():
   {==}
 

@@ -332,6 +332,10 @@ law parse_cl_too_large:
 law chunked_simple:
     {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\nGET")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, Path.bytes("GET")} : Parse.Outcome}
 
+# A huge extension limit can't wrap the size-line budget round to zero
+law chunked_huge_ext_limit:
+    {Parse.parse(Limits.Limits{8192, 8192, 65536, 100, 1048576, 4294967264}, Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], []}, []} : Parse.Outcome}
+
 # The chunks are joined
 law chunked_two:
     {Parse.parse(Limits.default_limits(), Path.bytes("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhe\r\n3\r\nllo\r\n0\r\n\r\n")) == Parse.Parsed{Req.Request{Path.bytes("POST"), Req.Origin{[[]], None{}}, Req.Http11{}, [Req.Field{Path.bytes("Host"), Path.bytes("a")}, Req.Field{Path.bytes("Transfer-Encoding"), Path.bytes("chunked")}], Path.bytes("hello")}, []} : Parse.Outcome}

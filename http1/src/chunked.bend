@@ -264,9 +264,17 @@ def chunk.size(r: Result<&2, &2, Reason.Reason, U32>, rest: List<&2, U32>, +tota
     case Done{+n}:
         chunk.zero(U32.is_zero(n), n, rest, total, limits, k)
 
-# A size line can hold the size (32 bytes is plenty) and the extension
+def size_budget.cap(fits: Bool, +ext: U32) -> U32:
+  match fits:
+    case True{}:
+        U32.add(ext, 32)
+    case False{}:
+        4294967295
+
+# A size line can hold the size (32 bytes is plenty) and the extension. The
+# sum stops at the largest U32 rather than wrapping round to a tiny budget.
 def size_budget(+limits: Limits.Limits) -> U32:
-  U32.add(Limits.chunk_ext(limits), 32)
+  size_budget.cap(U32.is_le(Limits.chunk_ext(limits), 4294967263), Limits.chunk_ext(limits))
 
 # A size line over the budget: blame the extension if there is one
 def chunk.long(ext: Bool) -> ChunkResult:
